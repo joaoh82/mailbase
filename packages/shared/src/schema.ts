@@ -201,6 +201,8 @@ export const messages = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
+    // RFC 5322 Message-ID without angle brackets; '' when the header is absent.
+    messageIdHeader: text("message_id_header").notNull().default(""),
   },
   (table) => [
     index("idx_messages_mailbox_folder_date").on(
@@ -209,6 +211,14 @@ export const messages = sqliteTable(
       table.date,
     ),
     index("idx_messages_thread").on(table.threadId),
+    index("idx_messages_mailbox_message_id").on(
+      table.mailboxId,
+      table.messageIdHeader,
+    ),
+    // One copy of a message per mailbox; '' (no Message-ID) is exempt.
+    uniqueIndex("idx_messages_mailbox_msgid_unique")
+      .on(table.mailboxId, table.messageIdHeader)
+      .where(sql`message_id_header != ''`),
   ],
 );
 

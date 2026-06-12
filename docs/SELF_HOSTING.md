@@ -4,9 +4,9 @@ This guide walks you from a fresh clone to your own mailbase deployment on your 
 Cloudflare account.
 
 > **Kept current per phase.** This document tracks the project as it develops; each
-> phase that changes setup adds its steps here. **Current as of Phase 0** — that means
-> you get the deployed skeleton (API health check, placeholder web app, log-only email
-> worker) and the full database schema. Receiving mail arrives with Phase 1.
+> phase that changes setup adds its steps here. **Current as of Phase 1** — that means
+> receiving works: mail sent to any address on your domain is parsed, stored in R2/D1,
+> and ready for the webmail UI that arrives with Phase 2.
 
 ## Prerequisites
 
@@ -119,10 +119,58 @@ To receive mail (Phase 1+), your domain's DNS must be served by Cloudflare:
 
 Use a low-value/test domain first.
 
+## 9. Enable Email Routing and route mail to the worker
+
+In the Cloudflare dashboard, on your domain's zone:
+
+1. Open **Email → Email Routing** and click **Enable Email Routing**. Let it add the
+   MX and SPF DNS records it proposes.
+2. Under **Routing rules**, edit the **Catch-all address** rule: set the action to
+   **Send to a Worker** and pick `mailbase-email-worker`, then enable the rule.
+
+No per-address rules are needed — every address on the domain is one catch-all rule
+pointing at the worker; who actually receives what is decided by the database rows
+you seed next.
+
+## 10. Seed your domain, mailbox, and addresses
+
+```sh
+make seed-remote DOMAIN=yourdomain.com MAILBOX=you
+```
+
+This inserts into your remote D1 database (see `scripts/seed.sql`):
+
+- a `domains` row for `yourdomain.com` (with unknown recipients delivered, not rejected),
+- one mailbox named after `MAILBOX` (defaults to `josh`),
+- two addresses — `you@yourdomain.com` and `hello@yourdomain.com` — into that mailbox,
+- a catch-all: any other address on the domain lands in the same mailbox.
+
+To reject mail for unknown addresses instead of catch-all delivery:
+
+```sh
+npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc \
+  --command "UPDATE domains SET reject_unknown = 1, catch_all_mailbox_id = NULL WHERE name = 'yourdomain.com'"
+```
+
+Now send an email from any external account to `you@yourdomain.com` and verify it
+landed:
+
+```sh
+npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc \
+  --command "SELECT from_addr, subject, snippet, has_attachments, datetime(date,'unixepoch') AS date FROM messages ORDER BY date DESC LIMIT 5"
+# `r2 object get` takes one "{bucket}/{key}" path
+npx wrangler r2 object get --remote --pipe \
+  "mailbase-mail/$(npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc --json \
+     --command "SELECT r2_key FROM messages ORDER BY date DESC LIMIT 1" | grep r2_key | cut -d'"' -f4)"
+```
+
+The second command prints the raw `.eml` exactly as it arrived.
+
 ## Local development
 
 ```sh
 make migrate-local   # apply migrations to the local Miniflare D1
+make seed-local DOMAIN=yourdomain.com [MAILBOX=you]   # seed local D1
 make dev             # API worker on a local port, with local D1/R2 bindings
 make dev-web         # web SPA dev server on http://localhost:5173
 make test            # run all tests
@@ -137,8 +185,6 @@ production use `wrangler secret put`. No secrets are needed as of Phase 0.
 
 Each of these will extend this guide when it ships:
 
-- **Phase 1 — inbound:** enable Email Routing on your domain, point the catch-all rule
-  at the email worker, seed mailboxes/addresses.
 - **Phase 2 — webmail:** create your login user; session signing secret.
 - **Phase 3 — sending:** verify your domain at Resend, set the `RESEND_API_KEY` secret.
 - **Phase 5 — multi-domain:** add further domains from the admin UI instead of this runbook.
