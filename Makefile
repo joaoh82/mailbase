@@ -4,6 +4,7 @@
 
 .PHONY: help install dev dev-web build test typecheck \
         migrate-local migrate-remote setup seed-local seed-remote \
+        user-local user-remote \
         deploy deploy-email deploy-api deploy-web
 
 MAILBOX ?= josh
@@ -44,6 +45,16 @@ seed-remote: ## Seed a domain/mailbox/addresses into remote D1 (DOMAIN=example.c
 	@test -n "$(DOMAIN)" || { echo "usage: make seed-remote DOMAIN=example.com [MAILBOX=josh]"; exit 1; }
 	mkdir -p .wrangler && sed -e 's/__DOMAIN__/$(DOMAIN)/g' -e 's/__MAILBOX__/$(MAILBOX)/g' scripts/seed.sql > .wrangler/seed.generated.sql
 	npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc --file .wrangler/seed.generated.sql
+
+user-local: ## Create/update a webmail login in local D1 (EMAIL=you@example.com PASSWORD=secret [NAME="You"] [MAILBOX_ID=seed-mailbox])
+	@test -n "$(EMAIL)" && test -n "$(PASSWORD)" || { echo "usage: make user-local EMAIL=you@example.com PASSWORD=secret [NAME=\"You\"]"; exit 1; }
+	mkdir -p .wrangler && npx tsx scripts/create-user.ts "$(EMAIL)" "$(PASSWORD)" "$(NAME)" "$(or $(MAILBOX_ID),seed-mailbox)" > .wrangler/user.generated.sql
+	npx wrangler d1 execute mailbase --local --file .wrangler/user.generated.sql
+
+user-remote: ## Create/update a webmail login in remote D1 (EMAIL=you@example.com PASSWORD=secret [NAME="You"] [MAILBOX_ID=seed-mailbox])
+	@test -n "$(EMAIL)" && test -n "$(PASSWORD)" || { echo "usage: make user-remote EMAIL=you@example.com PASSWORD=secret [NAME=\"You\"]"; exit 1; }
+	mkdir -p .wrangler && npx tsx scripts/create-user.ts "$(EMAIL)" "$(PASSWORD)" "$(NAME)" "$(or $(MAILBOX_ID),seed-mailbox)" > .wrangler/user.generated.sql
+	npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc --file .wrangler/user.generated.sql
 
 setup: ## One-time: create the D1 database and R2 bucket (enable R2 in the dashboard first)
 	npx wrangler d1 create mailbase
