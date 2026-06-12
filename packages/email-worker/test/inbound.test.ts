@@ -62,6 +62,7 @@ beforeEach(async () => {
     .where(eq(domains.id, "dom-test"));
   await db.insert(addresses).values([
     { id: "addr-josh", domainId: "dom-test", localPart: "josh", mailboxId: "mbx-josh" },
+    { id: "addr-jh", domainId: "dom-test", localPart: "jh", mailboxId: "mbx-josh" },
     { id: "addr-support", domainId: "dom-test", localPart: "support", mailboxId: "mbx-support" },
     { id: "addr-owner", domainId: "dom-strict", localPart: "owner", mailboxId: "mbx-owner" },
   ]);
@@ -167,6 +168,30 @@ describe("inbound pipeline", () => {
       const object = await env.MAIL_BUCKET.get(row.r2Key);
       expect(object).not.toBeNull();
     }
+  });
+
+  it("stores one copy when recipients are aliases of the same mailbox", async () => {
+    // josh@ and jh@ both map to mbx-josh; Email Routing delivers once per
+    // envelope recipient, but the mailbox should only keep one copy.
+    const raw = plainTextEmail({
+      to: "josh@testdomain.com, jh@testdomain.com",
+      messageId: "<alias-1@remote.example>",
+    });
+    await deliver(raw, { to: "josh@testdomain.com" });
+    await deliver(raw, { to: "jh@testdomain.com" });
+
+    expect(await db.select().from(messages).all()).toHaveLength(1);
+    expect(await db.select().from(threads).all()).toHaveLength(1);
+    expect((await env.MAIL_BUCKET.list()).objects).toHaveLength(1);
+  });
+
+  it("stores one copy when the sender retries an already-delivered message", async () => {
+    const raw = plainTextEmail({ messageId: "<retry-1@remote.example>" });
+    await deliver(raw);
+    const retry = await deliver(raw);
+
+    expect(retry.rejected).toBeNull();
+    expect(await db.select().from(messages).all()).toHaveLength(1);
   });
 
   it("routes unknown recipients to the domain catch-all mailbox", async () => {

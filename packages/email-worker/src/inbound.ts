@@ -67,6 +67,28 @@ export async function handleInboundEmail(
   const rawBuffer = await new Response(message.raw).arrayBuffer();
   const parsed = await parseInbound(rawBuffer, message);
 
+  // One copy per mailbox: a message sent to several aliases of the same
+  // mailbox is delivered once per envelope recipient, and a sender may retry
+  // after a delivery already succeeded. Accept duplicates without storing.
+  if (parsed.messageIdHeader !== "") {
+    const existing = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.mailboxId, mailboxId),
+          eq(messages.messageIdHeader, parsed.messageIdHeader),
+        ),
+      )
+      .get();
+    if (existing) {
+      console.log(
+        `Duplicate delivery of <${parsed.messageIdHeader}> to mailbox ${mailboxId}; already stored as ${existing.id}`,
+      );
+      return;
+    }
+  }
+
   const messageId = crypto.randomUUID();
   const rawKey = `${domain.name}/${mailboxId}/${messageId}.eml`;
 
