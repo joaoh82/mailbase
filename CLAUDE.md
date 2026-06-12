@@ -55,6 +55,10 @@ docs/                    # DESIGN.md, PROMPTS.md
 - Multi-domain invariant: nothing may assume a single domain. Every mailbox/address/message
   query is scoped by domain or mailbox membership.
 - Commit style: small, per-feature commits, imperative subject line.
+- `README.md`, `docs/SELF_HOSTING.md`, and the `Makefile` are user-facing and must stay
+  current: any PR that changes setup steps, commands, secrets, or deploy behavior updates
+  them in the same PR. Each phase that ships moves its entry out of the "Coming in later
+  phases" section of `docs/SELF_HOSTING.md` and into the real setup steps.
 
 ## Working agreement
 
