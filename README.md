@@ -4,9 +4,10 @@ Self-hosted, multi-domain, multi-account webmail on Cloudflare's developer platf
 One deployment serves every domain — domains, mailboxes, and users are database rows,
 never infrastructure. Runs for ~$0–5/month at personal/small-team volume.
 
-> **Status: early development.** Phase 0 (foundations) is complete: the monorepo,
-> database schema, CI/CD pipeline, and three deployable workers. Receiving and reading
-> mail comes in the next phases — see the [development plan](docs/DESIGN.md#9-development-plan).
+> **Status: early development.** Phase 1 (inbound pipeline) is complete: mail sent to
+> any address on your domains is parsed, threaded, and stored durably in R2 (raw) and
+> D1 (metadata + full-text search). Reading mail in the browser comes with Phase 2 —
+> see the [development plan](docs/DESIGN.md#9-development-plan).
 
 ## How it works
 
@@ -63,6 +64,7 @@ make deploy           # deploy all three workers
 | `make test`          | Vitest across all workspaces (Workers runtime via Miniflare) |
 | `make typecheck`     | `tsc --noEmit` across all workspaces                    |
 | `make migrate-local` | Apply D1 migrations to the local dev database           |
+| `make seed-local DOMAIN=…` | Seed a domain/mailbox/addresses into the local dev database |
 | `make build`         | Build the web SPA                                       |
 
 Tests and typecheck must pass before any PR; CI enforces both and deploys `main`

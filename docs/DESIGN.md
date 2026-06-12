@@ -121,14 +121,15 @@ mailbox_members  (mailbox_id, user_id, role)                  -- shared inboxes,
 identities       (id, user_id, address_id, display_name)      -- who may send as what
 messages         (id, mailbox_id, r2_key, thread_id, direction, from_addr, to_addrs,
                   subject, snippet, body_text, has_attachments, size, date,
-                  is_read, is_starred, folder, created_at)
+                  is_read, is_starred, folder, created_at, message_id_header)
 attachments      (id, message_id, filename, mime_type, size, r2_key)
 threads          (id, mailbox_id, subject_norm, last_message_at, message_count)
 messages_fts     (FTS5 virtual table over subject, from_addr, body_text)
 ```
 
 Folder model: a simple `folder` enum per message (`inbox`, `sent`, `archive`, `trash`, `spam`)
-plus labels later if wanted. Threading: normalize subject + `References`/`In-Reply-To` headers.
+plus labels later if wanted. Threading: normalize subject + `References`/`In-Reply-To` headers
+(each message's own `Message-ID` is stored in `message_id_header` so those lookups work).
 
 ---
 
