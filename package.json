@@ -1,0 +1,22 @@
+{
+  "name": "mailbase",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Multi-domain, multi-account webmail platform on Cloudflare",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w packages/api",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:migrate:local": "wrangler d1 migrations apply mailbase --local"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.15",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
+    "wrangler": "^4.100.0"
+  }
+}

@@ -1,0 +1,12 @@
+// Assets-only worker: serves the built SPA from ./dist. Run `npm run build`
+// before deploying. The web app talks to mailbase-api over HTTPS; it has no
+// bindings of its own.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "mailbase-web",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

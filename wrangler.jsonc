@@ -1,0 +1,15 @@
+// Root-level config exists ONLY so D1 migration commands work from the repo root:
+//   npx wrangler d1 migrations apply mailbase --local
+// It is never deployed. Worker deploy configs live in packages/*/wrangler.jsonc.
+{
+	"name": "mailbase",
+	"compatibility_date": "2026-06-01",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "mailbase",
+			"database_id": "969b484f-debc-4303-a1cb-955803a3b720",
+			"migrations_dir": "migrations"
+		}
+	]
+}
