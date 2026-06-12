@@ -52,9 +52,19 @@ export const sessions = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
+    // Per-session CSRF token (migration 0004): returned to the SPA at login
+    // and via /api/auth/me, required in X-CSRF-Token on mutations.
+    csrfToken: text("csrf_token").notNull().default(""),
   },
   (table) => [index("idx_sessions_user").on(table.userId)],
 );
+
+// Fixed-window login rate limiting (migration 0004), keyed by IP + email.
+export const loginAttempts = sqliteTable("login_attempts", {
+  key: text("key").primaryKey(),
+  windowStart: integer("window_start", { mode: "timestamp" }).notNull(),
+  count: integer("count").notNull().default(0),
+});
 
 export const mailboxes = sqliteTable(
   "mailboxes",
