@@ -158,8 +158,9 @@ landed:
 ```sh
 npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc \
   --command "SELECT from_addr, subject, snippet, has_attachments, datetime(date,'unixepoch') AS date FROM messages ORDER BY date DESC LIMIT 5"
-npx wrangler r2 object get mailbase-mail --remote --pipe \
-  "$(npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc --json \
+# `r2 object get` takes one "{bucket}/{key}" path
+npx wrangler r2 object get --remote --pipe \
+  "mailbase-mail/$(npx wrangler d1 execute mailbase --remote -c packages/api/wrangler.jsonc --json \
      --command "SELECT r2_key FROM messages ORDER BY date DESC LIMIT 1" | grep r2_key | cut -d'"' -f4)"
 ```
 
