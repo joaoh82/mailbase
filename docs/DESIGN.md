@@ -140,7 +140,9 @@ plus labels later if wanted. Threading: normalize subject + `References`/`In-Rep
 2. Worker parses with postal-mime; resolves `rcpt to` → `addresses` → `mailbox`.
 3. Unknown address → domain catch-all mailbox, or `message.setReject()` if domain says reject.
 4. Store raw `.eml` in R2; extract attachments to R2; insert `messages` + `attachments` rows;
-   update/create thread; update FTS index.
+   update/create thread; update FTS index. Deliveries are deduplicated per mailbox by
+   Message-ID (alias fan-out arrives once per envelope recipient; senders may retry after
+   success), enforced by a unique index on `(mailbox_id, message_id_header)`.
 5. Failures: Worker throws → Cloudflare retries / sender gets 4xx temp-fail, so mail isn't lost.
 
 ### Read (webmail)

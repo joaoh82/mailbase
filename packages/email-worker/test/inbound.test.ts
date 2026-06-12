@@ -185,6 +185,40 @@ describe("inbound pipeline", () => {
     expect((await env.MAIL_BUCKET.list()).objects).toHaveLength(1);
   });
 
+  it("stores one copy even when alias deliveries run concurrently", async () => {
+    // Two envelope deliveries of the same message racing past the pre-insert
+    // duplicate check; the unique index must keep exactly one copy and the
+    // loser must accept (not throw, which would make the sender retry).
+    const raw = plainTextEmail({
+      to: "josh@testdomain.com, jh@testdomain.com",
+      messageId: "<race-1@remote.example>",
+    });
+    const first = makeMessage(raw, { to: "josh@testdomain.com" });
+    const second = makeMessage(raw, { to: "jh@testdomain.com" });
+    const ctx = createExecutionContext();
+    await Promise.all([
+      worker.email(first, env, ctx),
+      worker.email(second, env, ctx),
+    ]);
+    await waitOnExecutionContext(ctx);
+
+    expect(first.rejected).toBeNull();
+    expect(second.rejected).toBeNull();
+    expect(await db.select().from(messages).all()).toHaveLength(1);
+    expect(await db.select().from(threads).all()).toHaveLength(1);
+  });
+
+  it("enforces one message per mailbox and Message-ID in the schema", async () => {
+    const insert = (id: string) =>
+      env.DB.prepare(
+        "INSERT INTO messages (id, mailbox_id, r2_key, direction, from_addr, date, message_id_header) VALUES (?, 'mbx-josh', ?, 'inbound', 'a@b.c', 0, 'dup@x')",
+      )
+        .bind(id, `key-${id}`)
+        .run();
+    await insert("m1");
+    await expect(insert("m2")).rejects.toThrow("UNIQUE constraint failed");
+  });
+
   it("stores one copy when the sender retries an already-delivered message", async () => {
     const raw = plainTextEmail({ messageId: "<retry-1@remote.example>" });
     await deliver(raw);

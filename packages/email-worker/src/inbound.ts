@@ -182,8 +182,29 @@ export async function handleInboundEmail(
 
   // D1 batches run atomically: the message, its attachments, and the thread
   // update land together or not at all.
-  await db.batch(
-    statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]],
+  try {
+    await db.batch(
+      statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]],
+    );
+  } catch (error) {
+    // Concurrent deliveries to aliases of one mailbox race past the
+    // pre-insert check above; the unique index is the backstop. The other
+    // delivery already stored the message, so accept this one without it.
+    if (isDuplicateMessageError(error)) {
+      console.log(
+        `Concurrent duplicate delivery of <${parsed.messageIdHeader}> to mailbox ${mailboxId}; keeping the other copy`,
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+function isDuplicateMessageError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return (
+    text.includes("UNIQUE constraint failed") &&
+    text.includes("message_id_header")
   );
 }
 

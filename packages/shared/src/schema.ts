@@ -215,6 +215,10 @@ export const messages = sqliteTable(
       table.mailboxId,
       table.messageIdHeader,
     ),
+    // One copy of a message per mailbox; '' (no Message-ID) is exempt.
+    uniqueIndex("idx_messages_mailbox_msgid_unique")
+      .on(table.mailboxId, table.messageIdHeader)
+      .where(sql`message_id_header != ''`),
   ],
 );
 
