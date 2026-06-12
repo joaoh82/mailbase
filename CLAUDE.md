@@ -35,6 +35,8 @@ docs/                    # DESIGN.md, PROMPTS.md
 - `npm install` at root (npm workspaces).
 - `npm run dev` — local dev via `wrangler dev` (Miniflare bindings for D1/R2).
 - `npm test` — Vitest across workspaces. Run before claiming any task done.
+  - One workspace: `npm test -w packages/api`. One file/pattern: `npm test -w packages/api -- run path/to.test.ts`
+    (or `-t "test name"` to filter by title). Watch mode: drop `run`.
 - `npm run typecheck` — `tsc --noEmit` across workspaces. Must pass before commit.
 - `npx wrangler d1 migrations apply mailbase --local` — apply migrations locally.
 - Deploys happen via `wrangler deploy` per package (CI does this on push to main).
@@ -64,3 +66,31 @@ docs/                    # DESIGN.md, PROMPTS.md
   `wrangler login`, creating secrets) — list them and pause; don't fake or skip them.
 - Prefer boring, readable code over clever abstractions. This is a long-lived personal
   infrastructure project; optimize for maintainability by one person.
+
+## Knowledge Base
+
+### Project-specific — `~/Documents/josh-obsidian-synced/Projects/mailbase/`
+
+- **Code:** `D:\projects\mailbase`
+- **Context (read first):** `~/Documents/josh-obsidian-synced/Projects/mailbase/context.md`
+- **Notes (running journal):** `~/Documents/josh-obsidian-synced/Projects/mailbase/notes.md`
+- **Project wiki:** `~/Documents/josh-obsidian-synced/Projects/mailbase/wiki/`
+
+**How to use each:**
+
+- `context.md` — stable background (product goals, stakeholders, domain). Read before starting non-trivial work. Update only when underlying facts change.
+- `notes.md` — append-only dated journal. Add entries under `## YYYY-MM-DD` headings for decisions, blockers, TODOs, and incidents — anything worth preserving but not stable enough for `context.md`.
+- `wiki/` — reference sub-docs (e.g. `Architecture.md`, `Local Dev Setup.md`, `Tech Services.md`). Create new files as topics emerge.
+
+**When to save:**
+
+- New stable fact about the product/domain → update `context.md`.
+- A decision, incident, or working note → append a dated entry to `notes.md`.
+- Reusable reference material (setup steps, credential locations, architecture) → new/updated file in `wiki/`.
+
+### Cross-project knowledge — `~/Documents/josh-obsidian-synced/vault/`
+
+- **General wiki:** `~/Documents/josh-obsidian-synced/vault/wiki/` — start at `_master-index.md`, then drill into the relevant topic's `_index.md`.
+- **Raw dumps:** `~/Documents/josh-obsidian-synced/vault/raw/` — drop unprocessed research here as `YYYY-MM-DD-{slug}.md`.
+
+Read the general wiki when the question isn't specific to this project. Drop raw research or imported notes into `vault/raw/` so it's captured even before it's distilled.
