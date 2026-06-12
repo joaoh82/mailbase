@@ -1,0 +1,3 @@
+# Copy to .dev.vars (gitignored) for local development.
+# In production: npx wrangler secret put SIGNING_KEY -c packages/api/wrangler.jsonc
+SIGNING_KEY="dev-only-signing-key-change-me"

@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --persist-to ../../.wrangler/state",
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "typecheck": "wrangler types && tsc --noEmit"
   },
   "dependencies": {
     "@mailbase/shared": "*",
-    "hono": "^4.12.25"
+    "hono": "^4.12.25",
+    "postal-mime": "^2.7.4"
   }
 }
