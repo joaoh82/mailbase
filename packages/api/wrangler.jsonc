@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "mailbase",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "969b484f-debc-4303-a1cb-955803a3b720",
       "migrations_dir": "../../migrations"
     }
   ],
