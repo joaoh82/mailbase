@@ -1,12 +1,21 @@
-// Assets-only worker: serves the built SPA from ./dist. Run `npm run build`
-// before deploying. The web app talks to mailbase-api over HTTPS; it has no
-// bindings of its own.
+// Serves the built SPA from ./dist and proxies /api/* to mailbase-api via a
+// service binding (see worker/index.ts) so cookies are first-party. Run
+// `npm run build` before deploying, and deploy mailbase-api first.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "mailbase-web",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-06-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "services": [
+    {
+      "binding": "API",
+      "service": "mailbase-api"
+    }
+  ]
 }
