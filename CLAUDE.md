@@ -71,7 +71,8 @@ docs/                    # DESIGN.md, PROMPTS.md
 
 ### Project-specific — `~/Documents/josh-obsidian-synced/Projects/mailbase/`
 
-- **Code:** `D:\projects\mailbase`
+- **Code on Windows:** `D:\projects\mailbase`
+- **Code on Mac:** `/Users/joaoh82/projects/mailbase`
 - **Context (read first):** `~/Documents/josh-obsidian-synced/Projects/mailbase/context.md`
 - **Notes (running journal):** `~/Documents/josh-obsidian-synced/Projects/mailbase/notes.md`
 - **Project wiki:** `~/Documents/josh-obsidian-synced/Projects/mailbase/wiki/`
