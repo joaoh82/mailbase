@@ -68,3 +68,7 @@ make deploy           # deploy all three workers
 Tests and typecheck must pass before any PR; CI enforces both and deploys `main`
 automatically. Read [CLAUDE.md](CLAUDE.md) for project conventions and
 [docs/DESIGN.md](docs/DESIGN.md) before non-trivial changes.
+
+## License
+
+[MIT](LICENSE)
