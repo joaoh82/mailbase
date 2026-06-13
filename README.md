@@ -4,10 +4,12 @@ Self-hosted, multi-domain, multi-account webmail on Cloudflare's developer platf
 One deployment serves every domain — domains, mailboxes, and users are database rows,
 never infrastructure. Runs for ~$0–5/month at personal/small-team volume.
 
-> **Status: early development.** Phase 1 (inbound pipeline) is complete: mail sent to
-> any address on your domains is parsed, threaded, and stored durably in R2 (raw) and
-> D1 (metadata + full-text search). Reading mail in the browser comes with Phase 2 —
-> see the [development plan](docs/DESIGN.md#9-development-plan).
+> **Status: early development.** Phase 2 (read-only webmail) is complete: log in to
+> the React webmail, read your mail in a three-pane inbox — HTML rendered in a
+> sandboxed iframe with remote images blocked by default — star, archive, trash,
+> download attachments via signed expiring URLs, and search (FTS5). Phase 1's inbound
+> pipeline keeps parsing, threading, and storing mail in R2 (raw) and D1. Sending
+> comes with Phase 3 — see the [development plan](docs/DESIGN.md#9-development-plan).
 
 ## How it works
 
@@ -65,7 +67,14 @@ make deploy           # deploy all three workers
 | `make typecheck`     | `tsc --noEmit` across all workspaces                    |
 | `make migrate-local` | Apply D1 migrations to the local dev database           |
 | `make seed-local DOMAIN=…` | Seed a domain/mailbox/addresses into the local dev database |
+| `make user-local EMAIL=… PASSWORD=…` | Create/update a webmail login in the local dev database |
 | `make build`         | Build the web SPA                                       |
+
+For local webmail: run `make dev` (API on :8787) and `make dev-web` (Vite on :5173)
+side by side — Vite proxies `/api` to the API worker, mirroring production where the
+web worker forwards `/api/*` to `mailbase-api` over a service binding. Copy
+`packages/api/.dev.vars.example` to `packages/api/.dev.vars` first (attachment URL
+signing key).
 
 Tests and typecheck must pass before any PR; CI enforces both and deploys `main`
 automatically. Read [CLAUDE.md](CLAUDE.md) for project conventions and

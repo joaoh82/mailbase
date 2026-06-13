@@ -146,7 +146,10 @@ plus labels later if wanted. Threading: normalize subject + `References`/`In-Rep
 5. Failures: Worker throws → Cloudflare retries / sender gets 4xx temp-fail, so mail isn't lost.
 
 ### Read (webmail)
-1. SPA authenticates (session cookie) → API Worker.
+1. SPA authenticates (session cookie) → API Worker. The web worker serves the SPA
+   assets and proxies `/api/*` to the API Worker over a service binding, so both
+   share one origin and the HttpOnly SameSite=Lax cookie stays first-party (no CORS,
+   no third-party-cookie problems). Vite's dev proxy mirrors this locally.
 2. List: paginated query on `messages` by mailbox + folder. Body text from D1; full original
    (HTML, raw) lazily fetched from R2 through the API.
 3. HTML email rendered in a sandboxed iframe (`sandbox`, CSP, no external loads by default,

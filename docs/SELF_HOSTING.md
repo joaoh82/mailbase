@@ -4,9 +4,10 @@ This guide walks you from a fresh clone to your own mailbase deployment on your 
 Cloudflare account.
 
 > **Kept current per phase.** This document tracks the project as it develops; each
-> phase that changes setup adds its steps here. **Current as of Phase 1** — that means
-> receiving works: mail sent to any address on your domain is parsed, stored in R2/D1,
-> and ready for the webmail UI that arrives with Phase 2.
+> phase that changes setup adds its steps here. **Current as of Phase 2** — that means
+> receiving works (mail to any address on your domain is parsed and stored in R2/D1)
+> and reading works: sign in to the webmail, browse folders, read HTML mail safely,
+> star/archive/trash, download attachments, and search. Sending arrives with Phase 3.
 
 ## Prerequisites
 
@@ -79,20 +80,36 @@ make migrate-remote
 This runs every migration in `migrations/` against your D1 database. Re-running is
 safe; already-applied migrations are skipped.
 
-## 6. Deploy
+## 6. Set the attachment signing secret
+
+Attachment downloads use signed, expiring URLs; the API worker needs an HMAC key:
+
+```sh
+openssl rand -hex 32 | npx wrangler secret put SIGNING_KEY -c packages/api/wrangler.jsonc
+```
+
+(Any long random string works; `wrangler secret put` also accepts interactive input.)
+
+## 7. Deploy
 
 ```sh
 make deploy
 ```
 
-This deploys, in order: the email worker, the API worker, and the web SPA (built
-first). Your workers land at:
+This deploys, in order: the email worker, the API worker, and the web worker (SPA
+built first). The order matters once: `mailbase-web` binds to `mailbase-api` via a
+service binding, so the API must exist before the first web deploy. Your workers
+land at:
 
 - `https://mailbase-api.<your-subdomain>.workers.dev/health` → `{"status":"ok"}`
-- `https://mailbase-web.<your-subdomain>.workers.dev` → placeholder page
+- `https://mailbase-web.<your-subdomain>.workers.dev` → the webmail (login screen)
 - `mailbase-email-worker` has no HTTP endpoint; it is invoked by Email Routing (Phase 1)
 
-## 7. Continuous deployment (optional)
+The web worker serves the SPA and proxies `/api/*` to `mailbase-api`, so the whole
+app lives on the single `mailbase-web` origin — that is the URL you bookmark, and it
+keeps the session cookie first-party.
+
+## 8. Continuous deployment (optional)
 
 If you host your fork on GitHub, the included workflow
 (`.github/workflows/ci.yml`) typechecks and tests every push/PR, and on push to
@@ -108,7 +125,7 @@ It needs two repository secrets (**Settings → Secrets and variables → Action
 Deploys only run for pushes to `main` in your own repo — fork PRs never see the
 secrets.
 
-## 8. Point a domain at Cloudflare
+## 9. Point a domain at Cloudflare
 
 To receive mail (Phase 1+), your domain's DNS must be served by Cloudflare:
 
@@ -119,7 +136,7 @@ To receive mail (Phase 1+), your domain's DNS must be served by Cloudflare:
 
 Use a low-value/test domain first.
 
-## 9. Enable Email Routing and route mail to the worker
+## 10. Enable Email Routing and route mail to the worker
 
 In the Cloudflare dashboard, on your domain's zone:
 
@@ -132,7 +149,7 @@ No per-address rules are needed — every address on the domain is one catch-all
 pointing at the worker; who actually receives what is decided by the database rows
 you seed next.
 
-## 10. Seed your domain, mailbox, and addresses
+## 11. Seed your domain, mailbox, and addresses
 
 ```sh
 make seed-remote DOMAIN=yourdomain.com MAILBOX=you
@@ -166,25 +183,49 @@ npx wrangler r2 object get --remote --pipe \
 
 The second command prints the raw `.eml` exactly as it arrived.
 
+## 12. Create your webmail login and sign in
+
+Accounts are created from the command line (there is deliberately no public
+signup):
+
+```sh
+make user-remote EMAIL=you@yourdomain.com PASSWORD='a long passphrase' NAME="Your Name"
+```
+
+This hashes the password locally (argon2id) and inserts/updates the user in remote
+D1, granting it membership of the seed mailbox (`MAILBOX_ID=...` to pick another).
+Re-running with the same `EMAIL` resets the password.
+
+Now open `https://mailbase-web.<your-subdomain>.workers.dev`, sign in with that
+email and password, and read your mail: three-pane inbox, threads, search, stars,
+archive/trash, attachment downloads. HTML mail renders in a sandboxed iframe with
+remote images blocked until you click **Load images** on a message.
+
 ## Local development
 
 ```sh
+cp packages/api/.dev.vars.example packages/api/.dev.vars   # local SIGNING_KEY
 make migrate-local   # apply migrations to the local Miniflare D1
 make seed-local DOMAIN=yourdomain.com [MAILBOX=you]   # seed local D1
-make dev             # API worker on a local port, with local D1/R2 bindings
-make dev-web         # web SPA dev server on http://localhost:5173
+make user-local EMAIL=you@yourdomain.com PASSWORD=devpassword   # local login
+make dev             # API worker on http://localhost:8787 (local D1/R2 bindings)
+make dev-web         # webmail dev server on http://localhost:5173
 make test            # run all tests
 make typecheck       # type-check all workspaces
 ```
 
+Run `make dev` and `make dev-web` side by side; Vite proxies `/api` to the API
+worker on 8787, the same single-origin shape as production. Local mail to read can
+be inserted by the email-worker tests or by seeding rows by hand.
+
 Local state (D1 data, R2 objects) lives under `.wrangler/state/` and is gitignored.
 Secrets for local dev go in `.dev.vars` files (gitignored) — never commit them; in
-production use `wrangler secret put`. No secrets are needed as of Phase 0.
+production use `wrangler secret put`. As of Phase 2 the API worker needs one
+secret: `SIGNING_KEY` (see `packages/api/.dev.vars.example`).
 
 ## Coming in later phases
 
 Each of these will extend this guide when it ships:
 
-- **Phase 2 — webmail:** create your login user; session signing secret.
 - **Phase 3 — sending:** verify your domain at Resend, set the `RESEND_API_KEY` secret.
 - **Phase 5 — multi-domain:** add further domains from the admin UI instead of this runbook.
