@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   listAllMessages,
   listIdentities,
@@ -18,11 +18,18 @@ import {
 } from "../api";
 import { isAuthError } from "../App";
 import { AdminPanel } from "./AdminPanel";
-import { ComposeModal, type ComposeInitial } from "./ComposeModal";
+import type { ComposeInitial } from "./ComposeModal";
 import { ManageMailboxModal } from "./ManageMailboxModal";
 import { MessageList } from "./MessageList";
 import { ALL_DOMAINS, ALL_INBOXES, Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
+
+// The composer pulls in Tiptap/ProseMirror (~300 KB), which the rest of the app
+// never touches. Load it on demand so it lands in its own async chunk instead
+// of the initial bundle; it's only rendered once `compose` is set (MAIL-6).
+const ComposeModal = lazy(() =>
+  import("./ComposeModal").then((m) => ({ default: m.ComposeModal })),
+);
 
 export interface Selection {
   messageId: string;
@@ -362,12 +369,20 @@ export function MailApp({
         onReply={handleReply}
       />
       {compose && (
-        <ComposeModal
-          identities={identities}
-          initial={compose}
-          onClose={() => setCompose(null)}
-          onSent={handleSent}
-        />
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <p className="text-sm text-slate-400">Loading composer…</p>
+            </div>
+          }
+        >
+          <ComposeModal
+            identities={identities}
+            initial={compose}
+            onClose={() => setCompose(null)}
+            onSent={handleSent}
+          />
+        </Suspense>
       )}
       {managing && selectedMailbox && (
         <ManageMailboxModal
