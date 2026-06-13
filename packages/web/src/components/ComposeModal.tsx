@@ -6,6 +6,7 @@ import {
   type Identity,
   type UploadResult,
 } from "../api";
+import { RichTextEditor } from "./RichTextEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -27,6 +28,19 @@ function splitAddresses(value: string): string[] {
     .filter(Boolean);
 }
 
+// Seed the rich-text editor from a plaintext initial body (a quoted reply or
+// forwarded message): escape HTML, start a paragraph per blank line, and turn
+// single newlines into <br>.
+function initialBodyHtml(text: string | undefined): string {
+  if (!text) return "";
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p>${escape(para).replace(/\r?\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 export function ComposeModal({
   identities,
   initial,
@@ -46,7 +60,10 @@ export function ComposeModal({
   const [bcc, setBcc] = useState(initial.bcc ?? "");
   const [showCc, setShowCc] = useState(Boolean(initial.cc || initial.bcc));
   const [subject, setSubject] = useState(initial.subject ?? "");
-  const [body, setBody] = useState(initial.body ?? "");
+  // The editor seed is captured once; bodyHtml/bodyText track its live output.
+  const [initialHtml] = useState(() => initialBodyHtml(initial.body));
+  const [bodyHtml, setBodyHtml] = useState(initialHtml);
+  const [bodyText, setBodyText] = useState(initial.body ?? "");
   const [attachments, setAttachments] = useState<UploadResult[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -89,13 +106,18 @@ export function ComposeModal({
     }
     setSending(true);
     try {
+      // The HTML is the body; send a plaintext fallback alongside it so the
+      // message is a proper multipart/alternative. An empty editor sends no
+      // HTML (a plain, empty-body message), matching the old behaviour.
+      const hasBody = bodyText.trim().length > 0;
       await sendMail({
         identityId,
         to: recipients,
         cc: splitAddresses(cc),
         bcc: splitAddresses(bcc),
         subject,
-        text: body,
+        text: bodyText,
+        html: hasBody ? bodyHtml : undefined,
         inReplyTo: initial.inReplyTo,
         uploadIds: attachments.map((a) => a.uploadId),
       });
@@ -188,11 +210,12 @@ export function ComposeModal({
             />
           </label>
 
-          <textarea
-            className="h-64 w-full resize-none rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-            placeholder="Write your message…"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
+          <RichTextEditor
+            initialContent={initialHtml}
+            onChange={(html, text) => {
+              setBodyHtml(html);
+              setBodyText(text);
+            }}
           />
 
           {attachments.length > 0 && (

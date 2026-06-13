@@ -46,9 +46,11 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   archive/trash. Full-text search via SQLite FTS5. HTML mail renders in a **sandboxed
   iframe with remote images blocked by default**; attachments download through signed,
   expiring URLs.
-- **Send via Resend.** Compose, reply / reply-all / forward with quoting, and attachments.
-  Sent mail goes out behind the `MailSender` interface, lands in a Sent folder, threads
-  correctly, and bounces/complaints are flagged via webhooks.
+- **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
+  headings, links) that sends real HTML email with a plaintext fallback, plus reply /
+  reply-all / forward with quoting, and attachments. Outbound HTML is sanitized to a safe
+  allowlist on the way out. Sent mail goes out behind the `MailSender` interface, lands in
+  a Sent folder, threads correctly, and bounces/complaints are flagged via webhooks.
 - **Multiple users & shared inboxes.** `owner` / `member` roles, per-user send-as
   enforcement (you can only send from addresses you belong to), an account switcher, and
   one-time **invite links** to onboard new accounts.

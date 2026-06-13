@@ -95,6 +95,50 @@ describe("sending", () => {
     expect(found.messages.map((m) => m.id)).toContain(message.id);
   });
 
+  it("sends an HTML body as sanitized multipart/alternative with a text fallback", async () => {
+    const res = await post("/api/send", {
+      identityId: "idn-josh",
+      to: ["friend@gmail.com"],
+      subject: "Formatted hello",
+      // When HTML is present it is the source of truth; this client text is
+      // ignored in favour of a plaintext alternative derived from the HTML.
+      text: "ignored client text",
+      html:
+        "<h1>Hi</h1><p><strong>Bold</strong> and a " +
+        '<a href="https://example.com" onclick="steal()">link</a>.</p>' +
+        "<ul><li>one</li><li>two</li></ul>" +
+        '<script>alert(1)</script><img src=x onerror="x()">',
+    });
+    expect(res.status).toBe(201);
+    const { message } = (await res.json()) as { message: { id: string } };
+
+    // Stored raw .eml carries both body parts.
+    const raw = await rawOf(message.id);
+    expect(raw).toContain("multipart/alternative");
+
+    // /full parses the stored raw back into html + text via postal-mime.
+    const full = await get(`/api/messages/${message.id}/full`);
+    const { html, text } = (await full.json()) as {
+      html: string | null;
+      text: string | null;
+    };
+
+    // Formatting survives; hostile constructs are stripped on the way out.
+    expect(html).toContain("<strong>Bold</strong>");
+    expect(html).toContain('<a href="https://example.com">link</a>');
+    expect(html).toContain("<ul><li>one</li><li>two</li></ul>");
+    expect(html).not.toContain("onclick");
+    expect(html).not.toContain("steal");
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("onerror");
+
+    // The plaintext alternative is derived from the HTML, not the client text.
+    expect(text).toContain("Bold and a link (https://example.com)");
+    expect(text).toContain("- one");
+    expect(text).toContain("- two");
+    expect(text).not.toContain("ignored client text");
+  });
+
   it("threads a reply into the parent's thread with reply headers", async () => {
     const res = await post("/api/send", {
       identityId: "idn-josh",

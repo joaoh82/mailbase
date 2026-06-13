@@ -5,3 +5,54 @@ body,
 #root {
   height: 100%;
 }
+
+/*
+ * Rich-text composer (MAIL-2). Tailwind's preflight strips list markers and
+ * heading sizes, so the editor content needs explicit styling to render the
+ * formatting it produces (this only affects the compose editor, not the
+ * sandboxed iframe that renders received mail).
+ */
+.rte-content {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(241 245 249); /* slate-100 */
+}
+.rte-content :first-child {
+  margin-top: 0;
+}
+.rte-content p {
+  margin: 0 0 0.5rem;
+}
+.rte-content h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+.rte-content h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+.rte-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.rte-content ul,
+.rte-content ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.5rem;
+}
+.rte-content ul {
+  list-style: disc;
+}
+.rte-content ol {
+  list-style: decimal;
+}
+.rte-content li {
+  margin: 0.125rem 0;
+}
+.rte-content a {
+  color: rgb(56 189 248); /* sky-400 */
+  text-decoration: underline;
+}

@@ -214,6 +214,8 @@ export interface SendPayload {
   bcc?: string[];
   subject: string;
   text: string;
+  /** Formatted HTML body from the composer; sanitized server-side on send. */
+  html?: string;
   inReplyTo?: string;
   uploadIds?: string[];
 }

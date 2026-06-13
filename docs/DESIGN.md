@@ -87,6 +87,7 @@ outbound relay) but with one deployment serving every domain, instead of one sta
 | API | **Hono** on a Worker | Tiny, fast, the standard Workers framework |
 | Webmail UI | **React** (Vite SPA) on Cloudflare Pages/Workers assets | Chosen; biggest ecosystem |
 | UI components | Tailwind CSS + shadcn/ui | Fast path to a clean inbox UI |
+| Compose editor | **Tiptap** (ProseMirror) in `packages/web` | Small WYSIWYG: bold/italic/lists/headings/links → HTML email |
 | Outbound | **Resend** (behind `MailSender` interface) | Chosen; simple multi-domain DKIM, free 3k/mo |
 | Auth | Email + password, sessions in D1 | Chosen; no third-party identity |
 | Attachments | R2 (same bucket, `attachments/` prefix) | Served via signed URLs from API Worker |
@@ -174,10 +175,14 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
    "load remote images" opt-in) — standard webmail XSS hygiene.
 
 ### Send
-1. SPA composes; API validates the user owns the chosen identity.
-2. API calls Resend HTTP API (domain already DKIM-verified at Resend).
-3. Store a copy in `messages` with `direction=outbound`, `folder=sent` (+ raw copy to R2).
-4. Bounces/complaints: Resend webhooks → API Worker → mark message, surface in UI.
+1. SPA composes in a rich-text editor; the API validates the user owns the chosen
+   identity. The composer sends an HTML body plus a plaintext fallback.
+2. The API sanitizes the outbound HTML to a safe allowlist (`sanitizeOutboundHtml` in
+   `packages/shared`) — we never trust the client — and derives the canonical plaintext
+   from it, so every message is a proper `multipart/alternative`.
+3. API calls Resend HTTP API (domain already DKIM-verified at Resend).
+4. Store a copy in `messages` with `direction=outbound`, `folder=sent` (+ raw copy to R2).
+5. Bounces/complaints: Resend webhooks → API Worker → mark message, surface in UI.
 
 ### Add a new domain (runbook → now a button)
 1. Add zone to Cloudflare; point GoDaddy nameservers at it.
