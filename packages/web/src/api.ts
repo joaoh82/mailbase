@@ -9,11 +9,14 @@ export interface User {
   isAdmin: boolean;
 }
 
+export type MailboxRole = "owner" | "member";
+
 export interface Mailbox {
   id: string;
   name: string;
   domain: string;
   address: string;
+  role: MailboxRole;
   unread: number;
 }
 
@@ -215,6 +218,94 @@ export interface UploadResult {
   filename: string;
   mimeType: string;
   size: number;
+}
+
+// --- Members & invitations (Phase 4) ---------------------------------------
+
+export interface MailboxMember {
+  userId: string;
+  email: string;
+  displayName: string;
+  role: MailboxRole;
+}
+
+export function listMembers(
+  mailboxId: string,
+): Promise<{ members: MailboxMember[] }> {
+  return request(`/api/mailboxes/${mailboxId}/members`);
+}
+
+export function addMember(
+  mailboxId: string,
+  email: string,
+  role: MailboxRole,
+): Promise<unknown> {
+  return request(`/api/mailboxes/${mailboxId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export function removeMember(
+  mailboxId: string,
+  userId: string,
+): Promise<unknown> {
+  return request(`/api/mailboxes/${mailboxId}/members/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export interface InviteResult {
+  token: string;
+  url: string;
+  email: string;
+  expiresAt: string;
+}
+
+export function createInvite(
+  email: string,
+  mailboxId: string,
+  role: MailboxRole,
+): Promise<InviteResult> {
+  return request("/api/invites", {
+    method: "POST",
+    body: JSON.stringify({ email, mailboxId, role }),
+  });
+}
+
+export interface InvitePreview {
+  email: string;
+  mailbox: string | null;
+}
+
+/** Public: read an invite's details for the accept screen (no session). */
+export function getInvite(token: string): Promise<InvitePreview> {
+  return request(`/api/invites/${token}`);
+}
+
+/**
+ * Public: accept an invite, creating the account and signing it in. Stores the
+ * returned CSRF token so the new session can immediately make mutations.
+ */
+export async function acceptInvite(
+  token: string,
+  password: string,
+  displayName: string,
+): Promise<User> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const res = await fetch(`/api/invites/${token}/accept`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ password, displayName }),
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { user: User; csrfToken: string };
+  csrfToken = data.csrfToken;
+  return data.user;
 }
 
 /** Stages one attachment in R2 (multipart, so it sets its own Content-Type). */

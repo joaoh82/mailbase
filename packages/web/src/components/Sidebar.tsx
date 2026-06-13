@@ -6,6 +6,7 @@ import {
   PenSquare,
   Send,
   Trash2,
+  Users,
 } from "lucide-react";
 import type { Folder, Mailbox, User } from "../api";
 import { cn } from "../lib/utils";
@@ -25,9 +26,11 @@ export function Sidebar({
   selectedMailboxId,
   folder,
   searching,
+  canManage,
   onCompose,
   onSelectMailbox,
   onSelectFolder,
+  onManage,
   onLogout,
 }: {
   user: User;
@@ -35,9 +38,11 @@ export function Sidebar({
   selectedMailboxId: string | null;
   folder: Folder;
   searching: boolean;
+  canManage: boolean;
   onCompose: () => void;
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
+  onManage: () => void;
   onLogout: () => void;
 }) {
   const selected = mailboxes.find((m) => m.id === selectedMailboxId);
@@ -50,9 +55,20 @@ export function Sidebar({
         <PenSquare className="h-4 w-4" /> Compose
       </Button>
 
-      <label className="mt-4 block px-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-        Mailbox
-      </label>
+      <div className="mt-4 flex items-center justify-between px-2">
+        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+          Mailbox
+        </label>
+        {canManage && (
+          <button
+            onClick={onManage}
+            title="Manage members & invites"
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
+          >
+            <Users className="h-3.5 w-3.5" /> Manage
+          </button>
+        )}
+      </div>
       <select
         className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
         value={selectedMailboxId ?? ""}

@@ -4,11 +4,13 @@ This guide walks you from a fresh clone to your own mailbase deployment on your 
 Cloudflare account.
 
 > **Kept current per phase.** This document tracks the project as it develops; each
-> phase that changes setup adds its steps here. **Current as of Phase 3** — receiving
+> phase that changes setup adds its steps here. **Current as of Phase 4** — receiving
 > works (mail to any address on your domain is parsed and stored in R2/D1), reading
 > works (sign in, browse folders, read HTML mail safely, star/archive/trash, download
-> attachments, search), and **sending works**: compose, reply/reply-all/forward with
-> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks.
+> attachments, search), **sending works** (compose, reply/reply-all/forward with
+> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks), and
+> **multiple users** can share inboxes with `owner`/`member` roles, send only from
+> addresses they own, and onboard new accounts via one-time invite links (step 15).
 
 ## Prerequisites
 
@@ -239,9 +241,10 @@ and lands in the Sent folder, but nothing is delivered. With it set, mail is sen
 the address of the identity you choose in the composer.
 
 > **Send-as identities.** You can only send from an address you have an *identity* for.
-> `make user-*` (step 12) now creates one identity per address in your seed mailbox, so
-> your seeded addresses work immediately. Adding more is a row in the `identities` table
-> (`user_id` → `address_id`); a full UI for this arrives in Phase 4.
+> `make user-*` (step 12) creates one identity per address in your seed mailbox, so your
+> seeded addresses work immediately. As of Phase 4, adding someone to a mailbox (via an
+> invite or the members panel — step 15) automatically mints their send-as identities for
+> every address of that mailbox, so shared inboxes and aliases work with no manual SQL.
 
 Now sign in, click **Compose**, send a message to an external account (e.g. your Gmail),
 and confirm it arrives. In Gmail's **Show original**, DKIM and SPF should both show
@@ -265,6 +268,34 @@ affected message in the webmail.
 The endpoint verifies every request's Svix signature against this secret, so it is safe
 to expose publicly. Messages that bounce or are marked as spam show a red notice in the
 thread view.
+
+## 15. Add more users, shared inboxes, and aliases (Phase 4)
+
+mailbase is multi-user. Every read is scoped to your mailbox memberships and every send
+to your identities, so users only ever see and send from what they belong to.
+
+**Roles.** Each `mailbox_members` row has a role: `owner` or `member`. Both can read and
+send; only an `owner` (or a global admin — a `users.is_admin = 1` account, which
+`make user-*` creates) can manage a mailbox's membership. The first account you made in
+step 12 is an admin.
+
+**Invite a brand-new user.** As an owner/admin, open the mailbox in the webmail and click
+**Manage** (next to the mailbox switcher). Enter the person's email, pick a role, and
+click **Invite new user**. You get a one-time link (valid 7 days) to send them; they open
+it, choose a password, and land signed in — already a member of that mailbox with send-as
+identities for its addresses. No command-line user creation needed.
+
+**Add an existing account to a shared inbox.** In the same **Manage** panel, enter their
+email and click **Add existing account**. They immediately see the shared mailbox in their
+switcher and can send as its address. Removing a member there also revokes their send-as
+identities for that mailbox (the last owner can't be removed).
+
+**Aliases** are just extra `addresses` rows pointing at the same mailbox (the seed already
+adds a `hello@` alias). Every member of a mailbox automatically gets a send-as identity for
+each of its addresses, so any alias is immediately usable as a from-address.
+
+> Prefer the CLI? `make user-remote EMAIL=… PASSWORD=… MAILBOX_ID=…` still works for
+> creating/attaching users directly, and is handy for the very first admin.
 
 ## Local development
 
@@ -294,6 +325,4 @@ URLs), `RESEND_API_KEY` (optional — unset uses the mock sender), and
 
 Each of these will extend this guide when it ships:
 
-- **Phase 4 — multi-account & permissions:** shared inboxes, aliases, per-user send-as
-  enforcement, an account switcher, and a UI for managing identities.
 - **Phase 5 — multi-domain:** add further domains from the admin UI instead of this runbook.
