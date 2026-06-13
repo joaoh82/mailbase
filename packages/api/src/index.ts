@@ -3,6 +3,7 @@ import { csrfProtection, requireAuth } from "./lib/auth";
 import type { AppEnv } from "./lib/context";
 import { attachmentRoutes } from "./routes/attachments";
 import { authRoutes } from "./routes/auth";
+import { inviteRoutes, publicInviteRoutes } from "./routes/invites";
 import { mailboxRoutes } from "./routes/mailboxes";
 import { messageRoutes } from "./routes/messages";
 import { sendRoutes } from "./routes/send";
@@ -22,12 +23,16 @@ const api = new Hono<AppEnv>();
 api.route("/auth", authRoutes);
 api.route("/attachments", attachmentRoutes);
 api.route("/webhooks", webhookRoutes);
+// Opening and accepting an invite is public — the one-time token is the
+// authorization. Creating one (below) requires a session.
+api.route("/invites", publicInviteRoutes);
 
 api.use("*", requireAuth, csrfProtection);
 api.route("/mailboxes", mailboxRoutes);
 api.route("/messages", messageRoutes);
 api.route("/threads", threadRoutes);
 api.route("/send", sendRoutes);
+api.route("/invites", inviteRoutes);
 
 app.route("/api", api);
 

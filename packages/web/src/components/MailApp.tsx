@@ -17,6 +17,7 @@ import {
 } from "../api";
 import { isAuthError } from "../App";
 import { ComposeModal, type ComposeInitial } from "./ComposeModal";
+import { ManageMailboxModal } from "./ManageMailboxModal";
 import { MessageList } from "./MessageList";
 import { Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
@@ -59,6 +60,7 @@ export function MailApp({
   const [error, setError] = useState<string | null>(null);
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [compose, setCompose] = useState<ComposeInitial | null>(null);
+  const [managing, setManaging] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
 
@@ -258,6 +260,8 @@ export function MailApp({
   );
 
   const selectedMailbox = mailboxes.find((m) => m.id === mailboxId) ?? null;
+  const canManage =
+    user.isAdmin || selectedMailbox?.role === "owner";
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100">
@@ -267,6 +271,7 @@ export function MailApp({
         selectedMailboxId={mailboxId}
         folder={folder}
         searching={activeQuery !== ""}
+        canManage={Boolean(canManage && selectedMailbox)}
         onCompose={handleComposeNew}
         onSelectMailbox={(id) => {
           setMailboxId(id);
@@ -276,6 +281,7 @@ export function MailApp({
           setFolder(f);
           setActiveQuery("");
         }}
+        onManage={() => setManaging(true)}
         onLogout={handleLogout}
       />
       <MessageList
@@ -307,6 +313,20 @@ export function MailApp({
           initial={compose}
           onClose={() => setCompose(null)}
           onSent={handleSent}
+        />
+      )}
+      {managing && selectedMailbox && (
+        <ManageMailboxModal
+          mailbox={selectedMailbox}
+          currentUserId={user.id}
+          onClose={() => {
+            setManaging(false);
+            // Membership/identity changes may affect this user's view.
+            refreshMailboxes();
+            listIdentities()
+              .then(({ identities }) => setIdentities(identities))
+              .catch(fail);
+          }}
         />
       )}
     </div>

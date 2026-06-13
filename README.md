@@ -4,15 +4,18 @@ Self-hosted, multi-domain, multi-account webmail on Cloudflare's developer platf
 One deployment serves every domain — domains, mailboxes, and users are database rows,
 never infrastructure. Runs for ~$0–5/month at personal/small-team volume.
 
-> **Status: early development.** Phase 3 (sending) is complete: a full send/receive
-> loop on one domain. Log in to the React webmail, read your mail in a three-pane
-> inbox — HTML rendered in a sandboxed iframe with remote images blocked by default —
-> star, archive, trash, download attachments via signed expiring URLs, and search
-> (FTS5). **Compose, reply/reply-all/forward with quoting, and attach files**; sent
-> mail goes out via Resend (behind the `MailSender` interface), lands in a Sent folder,
-> and threads correctly, with bounces/complaints flagged via webhooks. Phase 1's
-> inbound pipeline parses, threads, and stores mail in R2 (raw) and D1. Next up is
-> Phase 4 (multi-account & permissions) — see the
+> **Status: early development.** Phase 4 (multi-account & permissions) is complete: a
+> full send/receive loop on one domain, now multi-user. Log in to the React webmail,
+> read your mail in a three-pane inbox — HTML rendered in a sandboxed iframe with remote
+> images blocked by default — star, archive, trash, download attachments via signed
+> expiring URLs, and search (FTS5). **Compose, reply/reply-all/forward with quoting, and
+> attach files**; sent mail goes out via Resend (behind the `MailSender` interface),
+> lands in a Sent folder, and threads correctly, with bounces/complaints flagged via
+> webhooks. **Multiple users share inboxes** (an account switcher in the sidebar), each
+> user can only read and send from mailboxes they belong to (enforced by `owner`/`member`
+> roles), and new accounts are onboarded with a one-time **invite link** instead of a
+> password reset on the command line. Phase 1's inbound pipeline parses, threads, and
+> stores mail in R2 (raw) and D1. Next up is Phase 5 (multi-domain automation) — see the
 > [development plan](docs/DESIGN.md#9-development-plan).
 
 ## How it works

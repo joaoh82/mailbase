@@ -1,16 +1,26 @@
 import {
+  addresses,
   domains,
+  identities,
   mailboxes,
+  MAILBOX_ROLES,
   mailboxMembers,
+  type MailboxRole,
   MESSAGE_FOLDERS,
   messages,
   type MessageFolder,
+  users,
 } from "@mailbase/shared";
 import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { hasMailboxAccess } from "../lib/access";
 import type { AppEnv } from "../lib/context";
+import {
+  canManageMailbox,
+  getMailboxRole,
+  grantMailboxMembership,
+} from "../lib/membership";
 import { messageListItem } from "../lib/serialize";
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -24,7 +34,12 @@ mailboxRoutes.get("/", async (c) => {
   const user = c.get("user");
 
   const rows = await db
-    .select({ id: mailboxes.id, name: mailboxes.name, domain: domains.name })
+    .select({
+      id: mailboxes.id,
+      name: mailboxes.name,
+      domain: domains.name,
+      role: mailboxMembers.role,
+    })
     .from(mailboxMembers)
     .innerJoin(mailboxes, eq(mailboxes.id, mailboxMembers.mailboxId))
     .innerJoin(domains, eq(domains.id, mailboxes.domainId))
@@ -61,6 +76,7 @@ mailboxRoutes.get("/", async (c) => {
       name: r.name,
       domain: r.domain,
       address: `${r.name}@${r.domain}`,
+      role: r.role,
       unread: unreadByMailbox.get(r.id) ?? 0,
     })),
   });
@@ -176,4 +192,139 @@ mailboxRoutes.get("/:mailboxId/search", async (c) => {
       .filter((r) => r !== undefined)
       .map(messageListItem),
   });
+});
+
+const MEMBER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Who shares a mailbox. Any member may see the roster of a shared inbox.
+mailboxRoutes.get("/:mailboxId/members", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+  const mailboxId = c.req.param("mailboxId");
+  if (!(await hasMailboxAccess(db, user.id, mailboxId))) {
+    return c.json({ error: "Mailbox not found" }, 404);
+  }
+
+  const rows = await db
+    .select({
+      userId: users.id,
+      email: users.emailLogin,
+      displayName: users.displayName,
+      role: mailboxMembers.role,
+    })
+    .from(mailboxMembers)
+    .innerJoin(users, eq(users.id, mailboxMembers.userId))
+    .where(eq(mailboxMembers.mailboxId, mailboxId))
+    .orderBy(users.emailLogin)
+    .all();
+
+  return c.json({ members: rows });
+});
+
+// Add an *existing* account to a shared mailbox (owner/admin only); brand-new
+// logins come in through the invite flow. Grants send-as identities too.
+mailboxRoutes.post("/:mailboxId/members", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+  const mailboxId = c.req.param("mailboxId");
+  if (!(await canManageMailbox(db, user, mailboxId))) {
+    return c.json({ error: "You cannot manage this mailbox" }, 403);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  const email =
+    typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const roleInput = typeof body?.role === "string" ? body.role : "member";
+  if (!MEMBER_EMAIL_RE.test(email)) {
+    return c.json({ error: "A valid email is required" }, 400);
+  }
+  if (!(MAILBOX_ROLES as readonly string[]).includes(roleInput)) {
+    return c.json(
+      { error: `role must be one of: ${MAILBOX_ROLES.join(", ")}` },
+      400,
+    );
+  }
+
+  const target = await db
+    .select()
+    .from(users)
+    .where(eq(users.emailLogin, email))
+    .get();
+  if (!target) {
+    return c.json(
+      { error: "No account with that email; invite them instead" },
+      404,
+    );
+  }
+
+  await grantMailboxMembership(
+    db,
+    target.id,
+    mailboxId,
+    roleInput as MailboxRole,
+    target.displayName,
+  );
+  return c.json({ ok: true }, 201);
+});
+
+// Remove a member (owner/admin only). The last owner cannot be removed, so a
+// shared mailbox always keeps someone who can manage it. Their send-as
+// identities for this mailbox's addresses are revoked at the same time.
+mailboxRoutes.delete("/:mailboxId/members/:userId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+  const mailboxId = c.req.param("mailboxId");
+  if (!(await canManageMailbox(db, user, mailboxId))) {
+    return c.json({ error: "You cannot manage this mailbox" }, 403);
+  }
+
+  const targetUserId = c.req.param("userId");
+  const targetRole = await getMailboxRole(db, targetUserId, mailboxId);
+  if (!targetRole) return c.json({ error: "Member not found" }, 404);
+
+  if (targetRole === "owner") {
+    const owners = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(mailboxMembers)
+      .where(
+        and(
+          eq(mailboxMembers.mailboxId, mailboxId),
+          eq(mailboxMembers.role, "owner"),
+        ),
+      )
+      .get();
+    if ((owners?.count ?? 0) <= 1) {
+      return c.json({ error: "Cannot remove the last owner" }, 400);
+    }
+  }
+
+  const mailboxAddresses = await db
+    .select({ id: addresses.id })
+    .from(addresses)
+    .where(eq(addresses.mailboxId, mailboxId))
+    .all();
+  if (mailboxAddresses.length > 0) {
+    await db.delete(identities).where(
+      and(
+        eq(identities.userId, targetUserId),
+        inArray(
+          identities.addressId,
+          mailboxAddresses.map((a) => a.id),
+        ),
+      ),
+    );
+  }
+  await db
+    .delete(mailboxMembers)
+    .where(
+      and(
+        eq(mailboxMembers.mailboxId, mailboxId),
+        eq(mailboxMembers.userId, targetUserId),
+      ),
+    );
+
+  return c.json({ ok: true });
 });

@@ -146,6 +146,36 @@ export const identities = sqliteTable(
   ],
 );
 
+// Roles a user can hold in a mailbox (mailbox_members.role). "owner" may manage
+// the mailbox's membership and create invites into it; "member" can read and
+// send-as but not manage. Global users.is_admin overrides this everywhere.
+export const MAILBOX_ROLES = ["owner", "member"] as const;
+export type MailboxRole = (typeof MAILBOX_ROLES)[number];
+
+// One-time invitation to onboard a new login into a mailbox (migration 0006).
+// The token itself is never stored; only its SHA-256 hash, like sessions.
+export const invites = sqliteTable(
+  "invites",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull().unique(),
+    email: text("email").notNull(),
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .references(() => mailboxes.id, { onDelete: "cascade" }),
+    role: text("role", { enum: MAILBOX_ROLES }).notNull().default("member"),
+    invitedBy: text("invited_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("idx_invites_mailbox").on(table.mailboxId)],
+);
+
 export const threads = sqliteTable(
   "threads",
   {

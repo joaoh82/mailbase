@@ -117,8 +117,11 @@ users            (id, email_login, password_hash, display_name, is_admin, create
 sessions         (id, user_id, token_hash, expires_at, created_at)
 mailboxes        (id, domain_id, name, created_at)            -- e.g. "josh", "support"
 addresses        (id, domain_id, local_part, mailbox_id)      -- josh@, j@, hello@ → one mailbox
-mailbox_members  (mailbox_id, user_id, role)                  -- shared inboxes, permissions
+mailbox_members  (mailbox_id, user_id, role)                  -- shared inboxes; role ∈ {owner, member}
 identities       (id, user_id, address_id, display_name)      -- who may send as what
+invites          (id, token_hash, email, mailbox_id, role,    -- one-time onboarding link (Phase 4):
+                  invited_by, expires_at, accepted_at,        -- owner/admin creates it, the invitee
+                  created_at)                                 -- sets a password to claim the account
 messages         (id, mailbox_id, r2_key, thread_id, direction, from_addr, to_addrs,
                   subject, snippet, body_text, has_attachments, size, date,
                   is_read, is_starred, folder, created_at, message_id_header,
@@ -133,6 +136,14 @@ messages_fts     (FTS5 virtual table over subject, from_addr, body_text)
 Folder model: a simple `folder` enum per message (`inbox`, `sent`, `archive`, `trash`, `spam`)
 plus labels later if wanted. Threading: normalize subject + `References`/`In-Reply-To` headers
 (each message's own `Message-ID` is stored in `message_id_header` so those lookups work).
+
+Access model (Phase 4): every mailbox/message/thread read is scoped to the caller's
+`mailbox_members` rows — nothing outside your memberships is reachable. Sending is scoped to
+`identities` (you may only send from an address you have an identity for). Adding a member to a
+mailbox mints an identity for each of that mailbox's addresses, so shared-inbox members and
+aliases just work. `role` gates *management* (inviting users, adding/removing members): only a
+mailbox `owner` or a global `is_admin` user may manage a mailbox. New logins are onboarded via a
+one-time `invites` link; existing accounts are added to shared mailboxes directly.
 
 ---
 
