@@ -1,12 +1,18 @@
+import {
+  htmlToText,
+  plainTextToHtml,
+  sanitizeOutboundHtml,
+} from "@mailbase/shared/html";
 import { Paperclip, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   sendMail,
   uploadAttachment,
   type Identity,
   type UploadResult,
 } from "../api";
-import { RichTextEditor } from "./RichTextEditor";
+import { buildComposeBody, resolveSignature, swapSignature } from "../signature";
+import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -28,19 +34,6 @@ function splitAddresses(value: string): string[] {
     .filter(Boolean);
 }
 
-// Seed the rich-text editor from a plaintext initial body (a quoted reply or
-// forwarded message): escape HTML, start a paragraph per blank line, and turn
-// single newlines into <br>.
-function initialBodyHtml(text: string | undefined): string {
-  if (!text) return "";
-  const escape = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return text
-    .split(/\n{2,}/)
-    .map((para) => `<p>${escape(para).replace(/\r?\n/g, "<br>")}</p>`)
-    .join("");
-}
-
 export function ComposeModal({
   identities,
   initial,
@@ -60,14 +53,45 @@ export function ComposeModal({
   const [bcc, setBcc] = useState(initial.bcc ?? "");
   const [showCc, setShowCc] = useState(Boolean(initial.cc || initial.bcc));
   const [subject, setSubject] = useState(initial.subject ?? "");
-  // The editor seed is captured once; bodyHtml/bodyText track its live output.
-  const [initialHtml] = useState(() => initialBodyHtml(initial.body));
+  // The quoted/forwarded history (if any) is fixed for the life of the
+  // composer; the signature is inserted above it and swapped when the From
+  // identity changes (MAIL-4). All three are tracked in the same normalized
+  // HTML space (sanitized) so the signature can be found and replaced exactly.
+  const [quotedHtml] = useState(() =>
+    sanitizeOutboundHtml(plainTextToHtml(initial.body ?? "")),
+  );
+  const editorRef = useRef<RichTextEditorHandle>(null);
+  const initialSignature = sanitizeOutboundHtml(
+    resolveSignature(identities.find((i) => i.id === identityId)),
+  );
+  // The signature currently applied to the body, so a From change can swap it
+  // in place rather than stacking a second one.
+  const appliedSignature = useRef(initialSignature);
+  const [initialHtml] = useState(() =>
+    buildComposeBody(initialSignature, quotedHtml),
+  );
   const [bodyHtml, setBodyHtml] = useState(initialHtml);
-  const [bodyText, setBodyText] = useState(initial.body ?? "");
+  const [bodyText, setBodyText] = useState(() => htmlToText(initialHtml));
   const [attachments, setAttachments] = useState<UploadResult[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Swap the signature when the user picks a different From identity: replace
+  // the previously-inserted one (normalizing the editor's HTML so it can be
+  // matched) and re-seed the editor. onChange then refreshes bodyHtml/bodyText.
+  function handleIdentityChange(nextId: string) {
+    setIdentityId(nextId);
+    const next = sanitizeOutboundHtml(
+      resolveSignature(identities.find((i) => i.id === nextId)),
+    );
+    const prev = appliedSignature.current;
+    if (next === prev) return;
+    const current = sanitizeOutboundHtml(bodyHtml);
+    const updated = swapSignature(current, prev, next, quotedHtml);
+    appliedSignature.current = next;
+    editorRef.current?.setContent(updated);
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -157,7 +181,7 @@ export function ComposeModal({
               <select
                 className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
                 value={identityId}
-                onChange={(e) => setIdentityId(e.target.value)}
+                onChange={(e) => handleIdentityChange(e.target.value)}
               >
                 {identities.map((id) => (
                   <option key={id.id} value={id.id}>
@@ -211,6 +235,7 @@ export function ComposeModal({
           </label>
 
           <RichTextEditor
+            ref={editorRef}
             initialContent={initialHtml}
             onChange={(html, text) => {
               setBodyHtml(html);

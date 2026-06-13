@@ -9,6 +9,7 @@ import {
   MESSAGE_FOLDERS,
   messages,
   type MessageFolder,
+  sanitizeOutboundHtml,
   users,
 } from "@mailbase/shared";
 import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
@@ -39,6 +40,7 @@ mailboxRoutes.get("/", async (c) => {
       name: mailboxes.name,
       domain: domains.name,
       role: mailboxMembers.role,
+      signature: mailboxes.signature,
     })
     .from(mailboxMembers)
     .innerJoin(mailboxes, eq(mailboxes.id, mailboxMembers.mailboxId))
@@ -78,8 +80,37 @@ mailboxRoutes.get("/", async (c) => {
       address: `${r.name}@${r.domain}`,
       role: r.role,
       unread: unreadByMailbox.get(r.id) ?? 0,
+      signature: r.signature,
     })),
   });
+});
+
+// Update a mailbox's default signature (MAIL-4). Any member of the mailbox may
+// edit the shared default; the HTML is sanitized to the outbound allowlist
+// before it is stored. Reads/writes are scoped by mailbox membership, never by
+// assuming a single mailbox (multi-domain invariant).
+mailboxRoutes.patch("/:mailboxId/signature", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+  const mailboxId = c.req.param("mailboxId");
+  if (!(await hasMailboxAccess(db, user.id, mailboxId))) {
+    return c.json({ error: "Mailbox not found" }, 404);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  if (typeof body?.signature !== "string") {
+    return c.json({ error: "signature must be a string" }, 400);
+  }
+  const signature = sanitizeOutboundHtml(body.signature);
+
+  await db
+    .update(mailboxes)
+    .set({ signature })
+    .where(eq(mailboxes.id, mailboxId));
+  return c.json({ signature });
 });
 
 // Unified "all inboxes" view (Phase 5): one folder across every mailbox the

@@ -8,7 +8,9 @@ import {
   type MailboxMember,
   type MailboxRole,
   removeMember,
+  updateMailboxSignature,
 } from "../api";
+import { RichTextEditor } from "./RichTextEditor";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -30,6 +32,9 @@ export function ManageMailboxModal({
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sigHtml, setSigHtml] = useState(mailbox.signature);
+  const [sigBusy, setSigBusy] = useState(false);
+  const [sigSaved, setSigSaved] = useState(false);
 
   const refresh = useCallback(() => {
     listMembers(mailbox.id)
@@ -80,6 +85,21 @@ export function ManageMailboxModal({
       refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }
+
+  async function handleSaveSignature() {
+    setSigBusy(true);
+    setSigSaved(false);
+    setError(null);
+    try {
+      const res = await updateMailboxSignature(mailbox.id, sigHtml);
+      setSigHtml(res.signature);
+      setSigSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setSigBusy(false);
     }
   }
 
@@ -179,6 +199,31 @@ export function ManageMailboxModal({
             />
           </div>
         )}
+
+        <div className="space-y-2 border-t border-slate-800 pt-4">
+          <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+            Default signature
+          </label>
+          <p className="text-xs text-slate-500">
+            Appended to mail sent from this mailbox when the sending address has
+            no signature of its own.
+          </p>
+          <RichTextEditor
+            initialContent={mailbox.signature}
+            onChange={(next) => {
+              setSigHtml(next);
+              setSigSaved(false);
+            }}
+          />
+          <div className="flex items-center justify-end gap-2">
+            {sigSaved && (
+              <span className="text-xs text-emerald-400">Saved</span>
+            )}
+            <Button size="sm" disabled={sigBusy} onClick={handleSaveSignature}>
+              {sigBusy ? "Saving…" : "Save signature"}
+            </Button>
+          </div>
+        </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 

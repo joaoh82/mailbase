@@ -6,6 +6,7 @@ import {
   OctagonAlert,
   PenSquare,
   Send,
+  Settings,
   Trash2,
   Users,
 } from "lucide-react";
@@ -43,6 +44,7 @@ export function Sidebar({
   onSelectFolder,
   onManage,
   onOpenAdmin,
+  onOpenSettings,
   onLogout,
 }: {
   user: User;
@@ -60,6 +62,7 @@ export function Sidebar({
   onSelectFolder: (folder: Folder) => void;
   onManage: () => void;
   onOpenAdmin: () => void;
+  onOpenSettings: () => void;
   onLogout: () => void;
 }) {
   const isAll = selectedMailboxId === ALL_INBOXES;
@@ -156,6 +159,14 @@ export function Sidebar({
             <Globe className="h-3.5 w-3.5" /> Domains
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start"
+          onClick={onOpenSettings}
+        >
+          <Settings className="h-3.5 w-3.5" /> Signature
+        </Button>
         <p className="truncate px-2 text-xs text-slate-500" title={user.email}>
           {user.displayName || user.email}
         </p>

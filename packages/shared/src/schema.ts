@@ -79,6 +79,9 @@ export const mailboxes = sqliteTable(
       .notNull()
       .references(() => domains.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    // Default signature (migration 0008): HTML appended to outgoing mail when a
+    // sending identity in this mailbox has no signature of its own. '' = none.
+    signature: text("signature").notNull().default(""),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -141,6 +144,10 @@ export const identities = sqliteTable(
       .notNull()
       .references(() => addresses.id, { onDelete: "cascade" }),
     displayName: text("display_name").notNull().default(""),
+    // Per-identity signature (migration 0008): HTML appended to outgoing mail
+    // sent as this identity. Takes precedence over the mailbox default; '' =
+    // fall back to the owning mailbox's signature.
+    signature: text("signature").notNull().default(""),
   },
   (table) => [
     uniqueIndex("identities_user_id_address_id_unique").on(

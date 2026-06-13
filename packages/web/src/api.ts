@@ -18,6 +18,8 @@ export interface Mailbox {
   address: string;
   role: MailboxRole;
   unread: number;
+  /** Default signature (HTML) used when a sending identity has none. */
+  signature: string;
 }
 
 export type Folder = "inbox" | "sent" | "archive" | "trash" | "spam";
@@ -201,10 +203,36 @@ export interface Identity {
   address: string;
   displayName: string;
   mailboxId: string;
+  /** This identity's own signature (HTML); '' falls back to the mailbox's. */
+  signature: string;
+  /** The owning mailbox's default signature (HTML), for compose-time fallback. */
+  mailboxSignature: string;
 }
 
 export function listIdentities(): Promise<{ identities: Identity[] }> {
   return request("/api/send/identities");
+}
+
+/** Update one of the user's own send-as identity signatures (sanitized server-side). */
+export function updateIdentitySignature(
+  identityId: string,
+  signature: string,
+): Promise<{ signature: string }> {
+  return request(`/api/send/identities/${identityId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ signature }),
+  });
+}
+
+/** Update a mailbox's default signature (any member; sanitized server-side). */
+export function updateMailboxSignature(
+  mailboxId: string,
+  signature: string,
+): Promise<{ signature: string }> {
+  return request(`/api/mailboxes/${mailboxId}/signature`, {
+    method: "PATCH",
+    body: JSON.stringify({ signature }),
+  });
 }
 
 export interface SendPayload {

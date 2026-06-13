@@ -9,10 +9,16 @@ import {
   ListOrdered,
   type LucideIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { forwardRef, type ReactNode, useImperativeHandle } from "react";
 import { cn } from "../lib/utils";
 
 const HEADING_LEVELS = [1, 2, 3] as const;
+
+/** Imperative handle for replacing the editor's content (e.g. swapping the
+ * signature when the From identity changes). */
+export interface RichTextEditorHandle {
+  setContent: (html: string) => void;
+}
 
 /**
  * Lightweight WYSIWYG body editor for the composer (MAIL-2). The toolbar only
@@ -21,15 +27,15 @@ const HEADING_LEVELS = [1, 2, 3] as const;
  * produce anything outside the outbound HTML allowlist enforced server-side in
  * `sanitizeOutboundHtml`.
  */
-export function RichTextEditor({
-  initialContent,
-  onChange,
-}: {
-  /** Initial HTML to seed the editor (e.g. a quoted reply body). */
-  initialContent: string;
-  /** Called with the editor's HTML and plaintext on every change. */
-  onChange: (html: string, text: string) => void;
-}) {
+export const RichTextEditor = forwardRef<
+  RichTextEditorHandle,
+  {
+    /** Initial HTML to seed the editor (e.g. a quoted reply body). */
+    initialContent: string;
+    /** Called with the editor's HTML and plaintext on every change. */
+    onChange: (html: string, text: string) => void;
+  }
+>(function RichTextEditor({ initialContent, onChange }, ref) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -65,6 +71,18 @@ export function RichTextEditor({
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML(), editor.getText()),
   });
+
+  // Let a parent replace the whole body imperatively (signature swap on a From
+  // change). emitUpdate keeps onChange flowing so the parent's HTML/text stay
+  // in sync without a second code path.
+  useImperativeHandle(
+    ref,
+    () => ({
+      setContent: (html: string) =>
+        editor?.commands.setContent(html, { emitUpdate: true }),
+    }),
+    [editor],
+  );
 
   // Subscribe only to the toolbar's active states (avoids re-rendering on every
   // keystroke; updates on selection/format changes).
@@ -150,7 +168,7 @@ export function RichTextEditor({
       <EditorContent editor={editor} />
     </div>
   );
-}
+});
 
 function ToolbarButton({
   label,

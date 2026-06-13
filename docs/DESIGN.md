@@ -120,10 +120,13 @@ domains          (id, name, catch_all_mailbox_id NULL, reject_unknown BOOL,
                   -- seeded by hand, which the UI labels "managed manually".
 users            (id, email_login, password_hash, display_name, is_admin, created_at)
 sessions         (id, user_id, token_hash, expires_at, created_at)
-mailboxes        (id, domain_id, name, created_at)            -- e.g. "josh", "support"
+mailboxes        (id, domain_id, name, signature, created_at) -- e.g. "josh", "support"
+                  -- signature: default HTML signature for the mailbox (Phase 3+/MAIL-4)
 addresses        (id, domain_id, local_part, mailbox_id)      -- josh@, j@, hello@ → one mailbox
 mailbox_members  (mailbox_id, user_id, role)                  -- shared inboxes; role ∈ {owner, member}
-identities       (id, user_id, address_id, display_name)      -- who may send as what
+identities       (id, user_id, address_id, display_name,      -- who may send as what
+                  signature)                                  -- per-identity HTML signature
+                  -- (MAIL-4); '' falls back to the owning mailbox's signature.
 invites          (id, token_hash, email, mailbox_id, role,    -- one-time onboarding link (Phase 4):
                   invited_by, expires_at, accepted_at,        -- owner/admin creates it, the invitee
                   created_at)                                 -- sets a password to claim the account
@@ -176,7 +179,12 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
 
 ### Send
 1. SPA composes in a rich-text editor; the API validates the user owns the chosen
-   identity. The composer sends an HTML body plus a plaintext fallback.
+   identity. The composer sends an HTML body plus a plaintext fallback. A
+   **signature** is auto-inserted at compose time (MAIL-4): the chosen identity's
+   signature, else the owning mailbox's default, else none. On a new message it
+   sits at the bottom; on a reply/forward it sits above the quoted history, and
+   changing the From identity swaps it in place. Signatures are sanitized HTML
+   embedded in the body, so the derived plaintext fallback includes them too.
 2. The API sanitizes the outbound HTML to a safe allowlist (`sanitizeOutboundHtml` in
    `packages/shared`) — we never trust the client — and derives the canonical plaintext
    from it, so every message is a proper `multipart/alternative`.
