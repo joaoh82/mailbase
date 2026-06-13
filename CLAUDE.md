@@ -27,7 +27,7 @@ packages/api/            # Hono REST API, auth, send
 packages/web/            # React SPA
 packages/shared/         # types, Drizzle schema, MailSender interface
 migrations/              # D1 SQL migrations (numbered, append-only)
-docs/                    # DESIGN.md, PROMPTS.md
+docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
 ```
 
 ## Commands
@@ -55,10 +55,15 @@ docs/                    # DESIGN.md, PROMPTS.md
 - Multi-domain invariant: nothing may assume a single domain. Every mailbox/address/message
   query is scoped by domain or mailbox membership.
 - Commit style: small, per-feature commits, imperative subject line.
-- `README.md`, `docs/SELF_HOSTING.md`, and the `Makefile` are user-facing and must stay
-  current: any PR that changes setup steps, commands, secrets, or deploy behavior updates
-  them in the same PR. Each phase that ships moves its entry out of the "Coming in later
-  phases" section of `docs/SELF_HOSTING.md` and into the real setup steps.
+- **Always keep documentation current — never let the docs drift from the code.** Treat
+  docs as part of the change, not an afterthought: any PR that alters behavior, setup
+  steps, commands, secrets, deploy steps, architecture, or roadmap status updates the
+  relevant docs in the *same* PR. The user-facing surface — `README.md`,
+  `docs/SELF_HOSTING.md`, `docs/ROADMAP.md`, and the `Makefile` — must always match
+  reality, and `docs/DESIGN.md` stays the accurate source of truth for architecture and the
+  data model. Each phase that ships moves its entry out of the "Coming in later phases"
+  section of `docs/SELF_HOSTING.md` into the real setup steps and flips its status in
+  `docs/ROADMAP.md`. When in doubt, re-read the docs you touched and fix anything stale.
 
 ## Working agreement
 
