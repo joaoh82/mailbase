@@ -108,13 +108,15 @@ pointing a domain, deploying, and wiring up CI — lives in
 
 You'll need: a [Cloudflare account](https://dash.cloudflare.com/sign-up) (the **Workers
 Paid plan, $5/mo, is required from Phase 2** — argon2id login exceeds the free plan's
-10ms CPU limit), [Node.js](https://nodejs.org/) 22+, a domain you control for receiving
-mail, and a [Resend](https://resend.com) account for sending.
+10ms CPU limit), [Node.js](https://nodejs.org/) 22+ (an `.nvmrc` pins Node 24 — run
+`nvm use` to match), a domain you control for receiving mail, and a
+[Resend](https://resend.com) account for sending.
 
 The short version:
 
 ```sh
 git clone https://github.com/joaoh82/mailbase && cd mailbase
+nvm use               # match the pinned Node 24 (.nvmrc)
 make install          # npm install across workspaces
 npx wrangler login
 make setup            # creates the D1 database + R2 bucket (one-time)
