@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Logo } from "./ui/Logo";
 
 // Accept-invite flow: the invitee opens mail.../?invite=<token>, sets a
 // password, and lands signed in. Reached from App when the URL carries ?invite.
@@ -56,7 +57,10 @@ export function AcceptInviteScreen({
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
       <div className="w-full max-w-sm space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-8">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">mailbase</h1>
+          <div className="flex items-center gap-2.5">
+            <Logo className="h-7 w-7" />
+            <h1 className="text-2xl font-semibold tracking-tight">mailbase</h1>
+          </div>
           <p className="mt-1 text-sm text-slate-400">
             {preview
               ? `You've been invited to ${preview.mailbox ?? "a mailbox"}.`

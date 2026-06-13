@@ -1,3 +1,5 @@
+<img src="images/logo.svg" alt="mailbase logo" width="72" height="72" />
+
 # mailbase
 
 [![CI](https://github.com/joaoh82/mailbase/actions/workflows/ci.yml/badge.svg)](https://github.com/joaoh82/mailbase/actions/workflows/ci.yml)

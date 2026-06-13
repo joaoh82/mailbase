@@ -1,0 +1,6 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="mailbase logo">
+  <rect width="64" height="64" rx="14" fill="#0f172a" />
+  <rect x="12" y="18" width="40" height="28" rx="6.4" fill="#38bdf8" opacity="0.16" />
+  <rect x="12" y="18" width="40" height="28" rx="6.4" stroke="#38bdf8" stroke-width="3.4" />
+  <path d="M15.2 24 L29.8 33.2 a4 4 0 0 0 4.4 0 L48.8 24" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

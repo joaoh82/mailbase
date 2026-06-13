@@ -12,6 +12,7 @@ import {
 import type { Folder, Mailbox, User } from "../api";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { Logo } from "./ui/Logo";
 
 /** Sentinel mailbox id for the unified "all inboxes" view (Phase 5). */
 export const ALL_INBOXES = "all";
@@ -67,7 +68,10 @@ export function Sidebar({
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900 p-3">
-      <h1 className="px-2 text-lg font-semibold tracking-tight">mailbase</h1>
+      <div className="flex items-center gap-2 px-2">
+        <Logo className="h-5 w-5" />
+        <h1 className="text-lg font-semibold tracking-tight">mailbase</h1>
+      </div>
 
       <Button className="mt-4 w-full" onClick={onCompose}>
         <PenSquare className="h-4 w-4" /> Compose

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError, login, type User } from "../api";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Logo } from "./ui/Logo";
 
 export function LoginScreen({ onLogin }: { onLogin: (user: User) => void }) {
   const [email, setEmail] = useState("");
@@ -31,7 +32,10 @@ export function LoginScreen({ onLogin }: { onLogin: (user: User) => void }) {
         className="w-full max-w-sm space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-8"
       >
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">mailbase</h1>
+          <div className="flex items-center gap-2.5">
+            <Logo className="h-7 w-7" />
+            <h1 className="text-2xl font-semibold tracking-tight">mailbase</h1>
+          </div>
           <p className="mt-1 text-sm text-slate-400">
             Sign in to your webmail
           </p>
