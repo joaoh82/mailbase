@@ -21,7 +21,8 @@ Cloudflare account.
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up). The free tier is enough
   to start (Phases 0–1), but the **Workers Paid plan ($5/mo) is required from Phase 2
   onward** — see the login note below.
-- [Node.js](https://nodejs.org/) 22+ and npm
+- [Node.js](https://nodejs.org/) 22+ and npm. An `.nvmrc` pins Node 24 (which ships
+  npm 11); run `nvm use` to match it.
 - `make` (optional but recommended; every `make` target prints the underlying command,
   so you can always run the raw `npx wrangler …` equivalent yourself)
 - A domain you control, for receiving mail (needed from Phase 1 onward)
