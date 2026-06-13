@@ -11,15 +11,26 @@ Cloudflare account.
 
 ## Prerequisites
 
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is enough to start)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up). The free tier is enough
+  to start (Phases 0–1), but the **Workers Paid plan ($5/mo) is required from Phase 2
+  onward** — see the login note below.
 - [Node.js](https://nodejs.org/) 22+ and npm
 - `make` (optional but recommended; every `make` target prints the underlying command,
   so you can always run the raw `npx wrangler …` equivalent yourself)
 - A domain you control, for receiving mail (needed from Phase 1 onward)
 - A [Resend](https://resend.com) account, for sending mail (needed from Phase 3 onward)
 
+> **Phase 2 needs the Workers Paid plan.** Login hashes passwords with argon2id, which
+> costs ~150ms of CPU per sign-in. The Workers **free** plan caps CPU at **10ms per
+> request**, so on the free plan a login is killed mid-hash and fails *even with the
+> correct password*. The **Workers Paid plan ($5/mo)** raises the limit and is what
+> mailbase targets (the [config](../packages/api/wrangler.jsonc) sets `limits.cpu_ms`
+> to 1000). Receiving mail (Phases 0–1) works fine on the free plan. Upgrade under
+> **Workers & Pages → Plans** in the dashboard before completing Phase 2.
+
 Cost expectations: Cloudflare free tier covers Workers/D1/Email Routing at personal
-volume; R2 is free up to 10 GB; Resend is free up to 3,000 emails/month. See
+volume; R2 is free up to 10 GB; Resend is free up to 3,000 emails/month; the Workers
+Paid plan adds $5/mo and is required from Phase 2 (above). See
 [DESIGN.md §7](DESIGN.md#7-costs-steady-state-personalsmall-team-volume).
 
 ## 1. Clone and install
@@ -200,6 +211,10 @@ Now open `https://mailbase-web.<your-subdomain>.workers.dev`, sign in with that
 email and password, and read your mail: three-pane inbox, threads, search, stars,
 archive/trash, attachment downloads. HTML mail renders in a sandboxed iframe with
 remote images blocked until you click **Load images** on a message.
+
+> If the correct password is rejected or sign-in hangs, confirm the account is on the
+> **Workers Paid plan** (see Prerequisites): on the free plan the 10ms CPU limit kills
+> the argon2id hash before login completes.
 
 ## Local development
 

@@ -186,13 +186,14 @@ Steps 2–4 are fully API-automatable — Phase 5 wraps them in an admin UI.
 
 | Item | Cost |
 |---|---|
-| Cloudflare Email Routing, Workers, Pages | Free tier (Workers paid plan $5/mo only if needed) |
+| Cloudflare Email Routing, Workers, Pages | Free tier for Phases 0–1; **Workers Paid $5/mo required from Phase 2** (argon2id login exceeds the free plan's 10ms CPU limit) |
 | R2 | Free ≤10 GB, then ~$0.015/GB-mo |
 | D1 | Free tier covers this comfortably |
 | Resend | Free ≤3,000 emails/mo, ≤100/day |
 | Domains | Already owned (GoDaddy renewal unchanged) |
 
-≈ **$0/month** initially; hard ceiling around $5–10/mo at much higher volume.
+≈ **$0/month** for Phases 0–1; **$5/mo** once the webmail (Phase 2) is live, since
+login needs the Workers Paid plan. Hard ceiling around $5–10/mo at much higher volume.
 
 ---
 
