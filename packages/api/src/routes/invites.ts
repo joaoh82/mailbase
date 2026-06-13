@@ -1,5 +1,4 @@
 import {
-  addresses,
   domains,
   generateToken,
   hashPassword,
@@ -11,7 +10,7 @@ import {
   sha256Hex,
   users,
 } from "@mailbase/shared";
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import type { AppEnv, User } from "../lib/context";
@@ -31,26 +30,22 @@ function publicUser(user: User) {
   };
 }
 
-// The mailbox's primary address (its alphabetically-first local part), used to
-// show the invitee which inbox they're joining. Falls back to name@domain.
+// The mailbox's address (name@domain), shown to the invitee so they know which
+// inbox they're joining. This matches how the switcher and the Manage modal
+// label a mailbox, so the same inbox reads the same everywhere — rather than
+// surfacing whichever alias happens to sort first.
 async function mailboxAddressLabel(
   db: ReturnType<typeof drizzle>,
   mailboxId: string,
 ): Promise<string | null> {
   const row = await db
-    .select({
-      name: mailboxes.name,
-      domain: domains.name,
-      localPart: addresses.localPart,
-    })
+    .select({ name: mailboxes.name, domain: domains.name })
     .from(mailboxes)
     .innerJoin(domains, eq(domains.id, mailboxes.domainId))
-    .leftJoin(addresses, eq(addresses.mailboxId, mailboxes.id))
     .where(eq(mailboxes.id, mailboxId))
-    .orderBy(asc(addresses.localPart))
     .get();
   if (!row) return null;
-  return `${row.localPart ?? row.name}@${row.domain}`;
+  return `${row.name}@${row.domain}`;
 }
 
 // Public invite routes: opening the link and accepting it. No session — the

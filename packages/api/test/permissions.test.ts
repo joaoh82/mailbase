@@ -48,6 +48,9 @@ async function setupSharedAndAdmin() {
   await db.insert(addresses).values([
     { id: "addr-support", domainId: "dom-test", localPart: "support", mailboxId: "mbx-support" },
     { id: "addr-bob", domainId: "dom-test", localPart: "bob", mailboxId: "mbx-bob" },
+    // An alias that sorts before "bob": the invite label must still read bob@,
+    // not the first-sorting alias (regression guard for the label fix).
+    { id: "addr-bob-alias", domainId: "dom-test", localPart: "aaa", mailboxId: "mbx-bob" },
   ]);
   // josh owns support@; bob will be added as a member later.
   await db
