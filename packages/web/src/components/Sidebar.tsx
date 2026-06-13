@@ -25,7 +25,6 @@ export function Sidebar({
   selectedMailboxId,
   folder,
   searching,
-  canCompose,
   onCompose,
   onSelectMailbox,
   onSelectFolder,
@@ -36,7 +35,6 @@ export function Sidebar({
   selectedMailboxId: string | null;
   folder: Folder;
   searching: boolean;
-  canCompose: boolean;
   onCompose: () => void;
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
@@ -48,11 +46,7 @@ export function Sidebar({
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900 p-3">
       <h1 className="px-2 text-lg font-semibold tracking-tight">mailbase</h1>
 
-      <Button
-        className="mt-4 w-full"
-        disabled={!canCompose}
-        onClick={onCompose}
-      >
+      <Button className="mt-4 w-full" onClick={onCompose}>
         <PenSquare className="h-4 w-4" /> Compose
       </Button>
 

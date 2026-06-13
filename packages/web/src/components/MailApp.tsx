@@ -267,7 +267,6 @@ export function MailApp({
         selectedMailboxId={mailboxId}
         folder={folder}
         searching={activeQuery !== ""}
-        canCompose={identities.length > 0}
         onCompose={handleComposeNew}
         onSelectMailbox={(id) => {
           setMailboxId(id);

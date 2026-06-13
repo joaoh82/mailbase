@@ -125,8 +125,9 @@ export function ComposeModal({
         <div className="flex-1 space-y-2 overflow-y-auto p-4">
           {identities.length === 0 ? (
             <p className="rounded-md bg-amber-950 px-3 py-2 text-xs text-amber-300">
-              You have no send-as identity yet. Add one with{" "}
-              <code>make user-*</code> before you can send.
+              You don't have a send-as address yet, so sending is disabled. Your
+              account needs an <code>identities</code> row linking it to an
+              address before you can send (see docs/SELF_HOSTING.md).
             </p>
           ) : (
             <label className="flex items-center gap-2 text-xs text-slate-400">
