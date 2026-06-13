@@ -7,6 +7,8 @@
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020.svg?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
+**Stop paying for enterprise email on every domain — self-host them all for $0–5/month.**
+
 Self-hosted, multi-domain, multi-account webmail on Cloudflare's developer platform.
 One deployment serves every domain — domains, mailboxes, and users are database rows,
 never infrastructure. Runs for ~$0–5/month at personal/small-team volume.
