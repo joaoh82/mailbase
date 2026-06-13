@@ -17,6 +17,13 @@
       "bucket_name": "mailbase-mail"
     }
   ],
+  // Login verifies passwords with argon2id (~150ms CPU); this cap sits well
+  // above that (and above large-MIME parsing) while bounding any runaway
+  // request far below the 30s paid-plan default. Requires the Workers Paid
+  // plan — on the free plan's 10ms CPU limit, logins are killed mid-hash.
+  "limits": {
+    "cpu_ms": 1000
+  },
   "observability": {
     "enabled": true
   }
