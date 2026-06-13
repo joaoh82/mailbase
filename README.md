@@ -4,12 +4,16 @@ Self-hosted, multi-domain, multi-account webmail on Cloudflare's developer platf
 One deployment serves every domain — domains, mailboxes, and users are database rows,
 never infrastructure. Runs for ~$0–5/month at personal/small-team volume.
 
-> **Status: early development.** Phase 2 (read-only webmail) is complete: log in to
-> the React webmail, read your mail in a three-pane inbox — HTML rendered in a
-> sandboxed iframe with remote images blocked by default — star, archive, trash,
-> download attachments via signed expiring URLs, and search (FTS5). Phase 1's inbound
-> pipeline keeps parsing, threading, and storing mail in R2 (raw) and D1. Sending
-> comes with Phase 3 — see the [development plan](docs/DESIGN.md#9-development-plan).
+> **Status: early development.** Phase 3 (sending) is complete: a full send/receive
+> loop on one domain. Log in to the React webmail, read your mail in a three-pane
+> inbox — HTML rendered in a sandboxed iframe with remote images blocked by default —
+> star, archive, trash, download attachments via signed expiring URLs, and search
+> (FTS5). **Compose, reply/reply-all/forward with quoting, and attach files**; sent
+> mail goes out via Resend (behind the `MailSender` interface), lands in a Sent folder,
+> and threads correctly, with bounces/complaints flagged via webhooks. Phase 1's
+> inbound pipeline parses, threads, and stores mail in R2 (raw) and D1. Next up is
+> Phase 4 (multi-account & permissions) — see the
+> [development plan](docs/DESIGN.md#9-development-plan).
 
 ## How it works
 
