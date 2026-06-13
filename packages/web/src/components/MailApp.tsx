@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  listAllMessages,
   listIdentities,
   listMailboxes,
   listMessages,
@@ -16,10 +17,11 @@ import {
   type User,
 } from "../api";
 import { isAuthError } from "../App";
+import { AdminPanel } from "./AdminPanel";
 import { ComposeModal, type ComposeInitial } from "./ComposeModal";
 import { ManageMailboxModal } from "./ManageMailboxModal";
 import { MessageList } from "./MessageList";
-import { Sidebar } from "./Sidebar";
+import { ALL_DOMAINS, ALL_INBOXES, Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
 
 export interface Selection {
@@ -51,6 +53,7 @@ export function MailApp({
 }) {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [mailboxId, setMailboxId] = useState<string | null>(null);
+  const [domainFilter, setDomainFilter] = useState<string>(ALL_DOMAINS);
   const [folder, setFolder] = useState<Folder>("inbox");
   const [activeQuery, setActiveQuery] = useState("");
   const [items, setItems] = useState<MessageListItem[]>([]);
@@ -61,8 +64,11 @@ export function MailApp({
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [compose, setCompose] = useState<ComposeInitial | null>(null);
   const [managing, setManaging] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
+
+  const isAll = mailboxId === ALL_INBOXES;
 
   // Any API failure lands here; a dead session falls back to the login form.
   const fail = useCallback(
@@ -80,7 +86,14 @@ export function MailApp({
     listMailboxes()
       .then(({ mailboxes }) => {
         setMailboxes(mailboxes);
-        setMailboxId((current) => current ?? mailboxes[0]?.id ?? null);
+        // Land on the unified view when there's more than one mailbox; a
+        // single-mailbox user goes straight to it.
+        setMailboxId(
+          (current) =>
+            current ??
+            (mailboxes.length > 1 ? ALL_INBOXES : mailboxes[0]?.id) ??
+            null,
+        );
       })
       .catch(fail);
   }, [fail]);
@@ -103,12 +116,14 @@ export function MailApp({
     setNextCursor(null);
     setSelection(null);
     setError(null);
-    const load = activeQuery
-      ? searchMessages(mailboxId, activeQuery).then((r) => ({
-          messages: r.messages,
-          nextCursor: null as string | null,
-        }))
-      : listMessages(mailboxId, folder);
+    const load = isAll
+      ? listAllMessages(folder)
+      : activeQuery
+        ? searchMessages(mailboxId, activeQuery).then((r) => ({
+            messages: r.messages,
+            nextCursor: null as string | null,
+          }))
+        : listMessages(mailboxId, folder);
     load
       .then((page) => {
         if (seq !== loadSeq.current) return;
@@ -119,13 +134,16 @@ export function MailApp({
       .finally(() => {
         if (seq === loadSeq.current) setLoadingList(false);
       });
-  }, [mailboxId, folder, activeQuery, reloadNonce, fail]);
+  }, [mailboxId, isAll, folder, activeQuery, reloadNonce, fail]);
 
   const loadMore = useCallback(() => {
     if (!mailboxId || !nextCursor || loadingList || activeQuery) return;
     const seq = loadSeq.current;
     setLoadingList(true);
-    listMessages(mailboxId, folder, nextCursor)
+    const more = isAll
+      ? listAllMessages(folder, nextCursor)
+      : listMessages(mailboxId, folder, nextCursor);
+    more
       .then((page) => {
         if (seq !== loadSeq.current) return;
         setItems((prev) => [...prev, ...page.messages]);
@@ -135,7 +153,7 @@ export function MailApp({
       .finally(() => {
         if (seq === loadSeq.current) setLoadingList(false);
       });
-  }, [mailboxId, folder, nextCursor, loadingList, activeQuery, fail]);
+  }, [mailboxId, isAll, folder, nextCursor, loadingList, activeQuery, fail]);
 
   const patchItem = useCallback(
     (id: string, patch: Partial<MessageListItem>) => {
@@ -263,16 +281,50 @@ export function MailApp({
   const canManage =
     user.isAdmin || selectedMailbox?.role === "owner";
 
+  // Distinct domains and the mailbox list narrowed by the domain switcher
+  // (Phase 5). The switcher only filters the individual mailbox list; the
+  // "All inboxes" view always spans every mailbox.
+  const domains = useMemo(
+    () => [...new Set(mailboxes.map((m) => m.domain))].sort(),
+    [mailboxes],
+  );
+  const visibleMailboxes = useMemo(
+    () =>
+      domainFilter === ALL_DOMAINS
+        ? mailboxes
+        : mailboxes.filter((m) => m.domain === domainFilter),
+    [mailboxes, domainFilter],
+  );
+  const totalUnread = useMemo(
+    () => mailboxes.reduce((sum, m) => sum + m.unread, 0),
+    [mailboxes],
+  );
+
+  // Keep the mailbox selector and the message list in sync with the domain
+  // switcher: if narrowing the domain hides the currently-selected mailbox,
+  // fall back to that domain's first mailbox (or the unified view).
+  useEffect(() => {
+    if (isAll) return;
+    if (mailboxId && !visibleMailboxes.some((m) => m.id === mailboxId)) {
+      setMailboxId(visibleMailboxes[0]?.id ?? ALL_INBOXES);
+      setActiveQuery("");
+    }
+  }, [isAll, mailboxId, visibleMailboxes]);
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100">
       <Sidebar
         user={user}
-        mailboxes={mailboxes}
+        mailboxes={visibleMailboxes}
+        domains={domains}
+        domainFilter={domainFilter}
         selectedMailboxId={mailboxId}
         folder={folder}
         searching={activeQuery !== ""}
         canManage={Boolean(canManage && selectedMailbox)}
+        totalUnread={totalUnread}
         onCompose={handleComposeNew}
+        onSelectDomain={setDomainFilter}
         onSelectMailbox={(id) => {
           setMailboxId(id);
           setActiveQuery("");
@@ -282,6 +334,7 @@ export function MailApp({
           setActiveQuery("");
         }}
         onManage={() => setManaging(true)}
+        onOpenAdmin={() => setAdminOpen(true)}
         onLogout={handleLogout}
       />
       <MessageList
@@ -293,6 +346,7 @@ export function MailApp({
         activeQuery={activeQuery}
         selectedMessageId={selection?.messageId ?? null}
         error={error}
+        allInboxes={isAll}
         onSearch={setActiveQuery}
         onLoadMore={loadMore}
         onSelect={handleSelect}
@@ -322,6 +376,18 @@ export function MailApp({
           onClose={() => {
             setManaging(false);
             // Membership/identity changes may affect this user's view.
+            refreshMailboxes();
+            listIdentities()
+              .then(({ identities }) => setIdentities(identities))
+              .catch(fail);
+          }}
+        />
+      )}
+      {adminOpen && (
+        <AdminPanel
+          onClose={() => {
+            setAdminOpen(false);
+            // A new domain adds a mailbox + identities for this admin.
             refreshMailboxes();
             listIdentities()
               .then(({ identities }) => setIdentities(identities))

@@ -51,6 +51,17 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
 });
 
 /**
+ * Gates the admin-only section (Phase 5): domain management. Must run after
+ * requireAuth, which puts the user on the context. A non-admin gets 403.
+ */
+export const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
+  if (!c.get("user").isAdmin) {
+    return c.json({ error: "Admins only" }, 403);
+  }
+  await next();
+});
+
+/**
  * Rejects state-changing requests whose X-CSRF-Token header does not match
  * the session's token. Must run after requireAuth.
  */

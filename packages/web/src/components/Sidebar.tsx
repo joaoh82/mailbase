@@ -1,5 +1,6 @@
 import {
   Archive,
+  Globe,
   Inbox,
   LogOut,
   OctagonAlert,
@@ -12,6 +13,11 @@ import type { Folder, Mailbox, User } from "../api";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
+/** Sentinel mailbox id for the unified "all inboxes" view (Phase 5). */
+export const ALL_INBOXES = "all";
+/** Sentinel domain value for "show mailboxes from every domain". */
+export const ALL_DOMAINS = "all";
+
 const FOLDERS: { id: Folder; label: string; icon: typeof Inbox }[] = [
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "archive", label: "Archive", icon: Archive },
@@ -23,29 +29,41 @@ const FOLDERS: { id: Folder; label: string; icon: typeof Inbox }[] = [
 export function Sidebar({
   user,
   mailboxes,
+  domains,
+  domainFilter,
   selectedMailboxId,
   folder,
   searching,
   canManage,
+  totalUnread,
   onCompose,
+  onSelectDomain,
   onSelectMailbox,
   onSelectFolder,
   onManage,
+  onOpenAdmin,
   onLogout,
 }: {
   user: User;
   mailboxes: Mailbox[];
+  domains: string[];
+  domainFilter: string;
   selectedMailboxId: string | null;
   folder: Folder;
   searching: boolean;
   canManage: boolean;
+  totalUnread: number;
   onCompose: () => void;
+  onSelectDomain: (domain: string) => void;
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
   onManage: () => void;
+  onOpenAdmin: () => void;
   onLogout: () => void;
 }) {
+  const isAll = selectedMailboxId === ALL_INBOXES;
   const selected = mailboxes.find((m) => m.id === selectedMailboxId);
+  const inboxBadge = isAll ? totalUnread : (selected?.unread ?? 0);
 
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900 p-3">
@@ -54,6 +72,26 @@ export function Sidebar({
       <Button className="mt-4 w-full" onClick={onCompose}>
         <PenSquare className="h-4 w-4" /> Compose
       </Button>
+
+      {domains.length > 1 && (
+        <>
+          <label className="mt-4 block px-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Domain
+          </label>
+          <select
+            className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
+            value={domainFilter}
+            onChange={(e) => onSelectDomain(e.target.value)}
+          >
+            <option value={ALL_DOMAINS}>All domains</option>
+            {domains.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
       <div className="mt-4 flex items-center justify-between px-2">
         <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -74,6 +112,7 @@ export function Sidebar({
         value={selectedMailboxId ?? ""}
         onChange={(e) => onSelectMailbox(e.target.value)}
       >
+        <option value={ALL_INBOXES}>📥 All inboxes</option>
         {mailboxes.map((m) => (
           <option key={m.id} value={m.id}>
             {m.address}
@@ -93,23 +132,33 @@ export function Sidebar({
           >
             <Icon className="h-4 w-4" />
             <span className="flex-1 text-left">{label}</span>
-            {id === "inbox" && (selected?.unread ?? 0) > 0 && (
+            {id === "inbox" && inboxBadge > 0 && (
               <span className="rounded-full bg-sky-600 px-1.5 text-xs font-semibold text-white">
-                {selected!.unread}
+                {inboxBadge}
               </span>
             )}
           </button>
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-slate-800 pt-3">
+      <div className="mt-auto space-y-1 border-t border-slate-800 pt-3">
+        {user.isAdmin && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onClick={onOpenAdmin}
+          >
+            <Globe className="h-3.5 w-3.5" /> Domains
+          </Button>
+        )}
         <p className="truncate px-2 text-xs text-slate-500" title={user.email}>
           {user.displayName || user.email}
         </p>
         <Button
           variant="ghost"
           size="sm"
-          className="mt-1 w-full justify-start"
+          className="w-full justify-start"
           onClick={onLogout}
         >
           <LogOut className="h-3.5 w-3.5" /> Sign out

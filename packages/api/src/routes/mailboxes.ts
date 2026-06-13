@@ -82,6 +82,86 @@ mailboxRoutes.get("/", async (c) => {
   });
 });
 
+// Unified "all inboxes" view (Phase 5): one folder across every mailbox the
+// user belongs to, newest first, with each message tagged by its mailbox so the
+// SPA can show where it landed. Same keyset cursor as the per-mailbox list.
+// Registered before "/:mailboxId/messages" so "all" is not read as an id.
+mailboxRoutes.get("/all/messages", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+
+  const folderParam = c.req.query("folder") ?? "inbox";
+  if (!(MESSAGE_FOLDERS as readonly string[]).includes(folderParam)) {
+    return c.json({ error: `Unknown folder: ${folderParam}` }, 400);
+  }
+  const folder = folderParam as MessageFolder;
+
+  const limit = Math.min(
+    Math.max(Number(c.req.query("limit")) || DEFAULT_PAGE_SIZE, 1),
+    MAX_PAGE_SIZE,
+  );
+
+  // Scope to the user's mailbox memberships via an inner join — nothing outside
+  // them is reachable (multi-domain invariant).
+  const conditions = [
+    eq(mailboxMembers.userId, user.id),
+    eq(messages.folder, folder),
+  ];
+  const cursorParam = c.req.query("cursor");
+  if (cursorParam) {
+    const dot = cursorParam.indexOf(".");
+    const cursorDate = Number(cursorParam.slice(0, dot));
+    const cursorId = cursorParam.slice(dot + 1);
+    if (dot < 1 || !Number.isFinite(cursorDate) || !cursorId) {
+      return c.json({ error: "Malformed cursor" }, 400);
+    }
+    const boundary = new Date(cursorDate * 1000);
+    conditions.push(
+      or(
+        lt(messages.date, boundary),
+        and(eq(messages.date, boundary), lt(messages.id, cursorId)),
+      )!,
+    );
+  }
+
+  const page = await db
+    .select({
+      message: messages,
+      mailboxName: mailboxes.name,
+      domainName: domains.name,
+    })
+    .from(messages)
+    .innerJoin(
+      mailboxMembers,
+      and(
+        eq(mailboxMembers.mailboxId, messages.mailboxId),
+        eq(mailboxMembers.userId, user.id),
+      ),
+    )
+    .innerJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
+    .innerJoin(domains, eq(domains.id, mailboxes.domainId))
+    .where(and(...conditions))
+    .orderBy(desc(messages.date), desc(messages.id))
+    .limit(limit + 1)
+    .all();
+
+  const items = page.slice(0, limit);
+  const last = items[items.length - 1]?.message;
+  const nextCursor =
+    page.length > limit && last
+      ? `${Math.floor(last.date.getTime() / 1000)}.${last.id}`
+      : null;
+
+  return c.json({
+    messages: items.map((row) => ({
+      ...messageListItem(row.message),
+      mailboxId: row.message.mailboxId,
+      mailboxAddress: `${row.mailboxName}@${row.domainName}`,
+    })),
+    nextCursor,
+  });
+});
+
 // Paginated message list for one folder, newest first. Keyset cursor
 // "<epochSeconds>.<id>" so pages stay stable while new mail arrives.
 mailboxRoutes.get("/:mailboxId/messages", async (c) => {

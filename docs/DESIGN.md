@@ -112,7 +112,11 @@ mailbase/
 
 ```sql
 domains          (id, name, catch_all_mailbox_id NULL, reject_unknown BOOL,
-                  resend_verified BOOL, created_at)
+                  resend_verified BOOL, cloudflare_zone_id, resend_domain_id,
+                  created_at)
+                  -- cloudflare_zone_id/resend_domain_id (Phase 5): provider
+                  -- handles for domains added via the admin UI; '' for domains
+                  -- seeded by hand, which the UI labels "managed manually".
 users            (id, email_login, password_hash, display_name, is_admin, created_at)
 sessions         (id, user_id, token_hash, expires_at, created_at)
 mailboxes        (id, domain_id, name, created_at)            -- e.g. "josh", "support"
@@ -175,12 +179,15 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
 3. Store a copy in `messages` with `direction=outbound`, `folder=sent` (+ raw copy to R2).
 4. Bounces/complaints: Resend webhooks → API Worker → mark message, surface in UI.
 
-### Add a new domain (runbook → later a button)
+### Add a new domain (runbook → now a button)
 1. Add zone to Cloudflare; point GoDaddy nameservers at it.
 2. Enable Email Routing; create catch-all rule → Email Worker (API call).
 3. Add domain at Resend; create the DKIM/SPF DNS records (API call).
 4. Insert `domains` row + default mailbox/addresses.
-Steps 2–4 are fully API-automatable — Phase 5 wraps them in an admin UI.
+**Phase 5 implements this as the admin "Domains" panel:** step 1's zone is created
+(or reused) via the Cloudflare API and steps 2–4 run via API too; the only manual
+step is delegating nameservers at the registrar, which the UI surfaces with the
+exact nameservers to set. See `docs/SELF_HOSTING.md` §16.
 
 ---
 

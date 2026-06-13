@@ -40,6 +40,10 @@ export interface MessageListItem {
   folder: Folder;
   direction: MessageDirection;
   deliveryStatus: DeliveryStatus;
+  // Only set in the unified "all inboxes" view (Phase 5), so the row can show
+  // which mailbox a message landed in.
+  mailboxId?: string;
+  mailboxAddress?: string;
 }
 
 export interface AttachmentMeta {
@@ -135,6 +139,16 @@ export function searchMessages(
 ): Promise<{ messages: MessageListItem[] }> {
   const params = new URLSearchParams({ q });
   return request(`/api/mailboxes/${mailboxId}/search?${params}`);
+}
+
+/** Unified "all inboxes" view (Phase 5): one folder across every mailbox. */
+export function listAllMessages(
+  folder: Folder,
+  cursor?: string | null,
+): Promise<{ messages: MessageListItem[]; nextCursor: string | null }> {
+  const params = new URLSearchParams({ folder });
+  if (cursor) params.set("cursor", cursor);
+  return request(`/api/mailboxes/all/messages?${params}`);
 }
 
 export function fetchThread(threadId: string): Promise<ThreadResponse> {
@@ -323,4 +337,143 @@ export async function uploadAttachment(file: File): Promise<UploadResult> {
     throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
   }
   return (await res.json()) as UploadResult;
+}
+
+// --- Domain administration (Phase 5, admin only) ---------------------------
+
+export interface AdminDomain {
+  id: string;
+  name: string;
+  rejectUnknown: boolean;
+  catchAllMailboxId: string | null;
+  resendVerified: boolean;
+  /** False for domains seeded by hand (no Cloudflare/Resend handles). */
+  managed: boolean;
+  cloudflareZoneId: string;
+  resendDomainId: string;
+  mailboxCount: number;
+  addressCount: number;
+}
+
+export interface DnsRecord {
+  record: string;
+  name: string;
+  type: string;
+  value: string;
+  ttl: string;
+  status?: string;
+  priority?: number;
+}
+
+export interface AddDomainResult {
+  domain: Omit<AdminDomain, "mailboxCount" | "addressCount">;
+  nameServers: string[];
+  zoneStatus: string;
+  resendStatus: string;
+  records: DnsRecord[];
+  simulated: boolean;
+}
+
+export interface DomainMailbox {
+  id: string;
+  name: string;
+  address: string;
+  addresses: { id: string; localPart: string; address: string }[];
+}
+
+export interface DomainDetail {
+  domain: Omit<AdminDomain, "mailboxCount" | "addressCount">;
+  mailboxes: DomainMailbox[];
+}
+
+export interface DomainStatus {
+  zone: { id: string; name: string; status: string; nameServers: string[] } | null;
+  emailRouting: { enabled: boolean; status: string } | null;
+  catchAll: { enabled: boolean; action: string; targets: string[] } | null;
+  resend: {
+    status: string;
+    records: {
+      record: string;
+      name: string;
+      type: string;
+      value: string;
+      status: string;
+    }[];
+  } | null;
+  simulated: boolean;
+}
+
+export interface ProvisionResult {
+  steps: { step: string; ok: boolean; detail: string }[];
+  simulated: boolean;
+}
+
+export function listDomains(): Promise<{ domains: AdminDomain[] }> {
+  return request("/api/admin/domains");
+}
+
+export function addDomain(name: string, mailbox: string): Promise<AddDomainResult> {
+  return request("/api/admin/domains", {
+    method: "POST",
+    body: JSON.stringify({ name, mailbox }),
+  });
+}
+
+export function getDomainDetail(id: string): Promise<DomainDetail> {
+  return request(`/api/admin/domains/${id}`);
+}
+
+export function getDomainStatus(id: string): Promise<DomainStatus> {
+  return request(`/api/admin/domains/${id}/status`);
+}
+
+export function provisionDomain(id: string): Promise<ProvisionResult> {
+  return request(`/api/admin/domains/${id}/provision`, { method: "POST" });
+}
+
+export function verifyDomain(id: string): Promise<DomainStatus> {
+  return request(`/api/admin/domains/${id}/verify`, { method: "POST" });
+}
+
+export function setDomainPolicy(
+  id: string,
+  policy: { rejectUnknown: boolean; catchAllMailboxId: string | null },
+): Promise<unknown> {
+  return request(`/api/admin/domains/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(policy),
+  });
+}
+
+export function addDomainMailbox(
+  id: string,
+  name: string,
+): Promise<{ id: string; name: string; address: string }> {
+  return request(`/api/admin/domains/${id}/mailboxes`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteDomainMailbox(id: string, mailboxId: string): Promise<unknown> {
+  return request(`/api/admin/domains/${id}/mailboxes/${mailboxId}`, {
+    method: "DELETE",
+  });
+}
+
+export function addDomainAddress(
+  id: string,
+  localPart: string,
+  mailboxId: string,
+): Promise<{ id: string; localPart: string; address: string }> {
+  return request(`/api/admin/domains/${id}/addresses`, {
+    method: "POST",
+    body: JSON.stringify({ localPart, mailboxId }),
+  });
+}
+
+export function deleteDomainAddress(id: string, addressId: string): Promise<unknown> {
+  return request(`/api/admin/domains/${id}/addresses/${addressId}`, {
+    method: "DELETE",
+  });
 }
