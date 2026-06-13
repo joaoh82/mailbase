@@ -2,11 +2,13 @@ import {
   addresses,
   attachments,
   domains,
+  htmlToText,
   identities,
   type MailAttachment,
   messages,
   normalizeSubject,
   type OutboundMail,
+  sanitizeOutboundHtml,
   threads,
 } from "@mailbase/shared";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -99,9 +101,17 @@ sendRoutes.post("/", async (c) => {
   const cc = recipients(body?.cc);
   const bcc = recipients(body?.bcc);
   const subject = typeof body?.subject === "string" ? body.subject : "";
-  const text = typeof body?.text === "string" ? body.text : "";
+  const clientText = typeof body?.text === "string" ? body.text : "";
   const htmlInput = typeof body?.html === "string" ? body.html : "";
-  const html = htmlInput.trim() ? htmlInput : undefined;
+  // Sanitize on the way out (MAIL-2): this is our own composer's HTML, but we
+  // never trust the client, so restrict it to a small, email-client-friendly
+  // allowlist and strip everything else (scripts, styles, handlers, etc.).
+  const sanitizedHtml = htmlInput.trim() ? sanitizeOutboundHtml(htmlInput) : "";
+  const html = sanitizedHtml.trim() ? sanitizedHtml : undefined;
+  // For a rich body the HTML is the source of truth; derive the plaintext
+  // alternative from it so the multipart/alternative parts always agree. Fall
+  // back to a client-supplied text only when there is no HTML.
+  const text = html ? htmlToText(html) : clientText;
   const inReplyToId =
     typeof body?.inReplyTo === "string" && body.inReplyTo ? body.inReplyTo : null;
   const uploadIds = Array.isArray(body?.uploadIds)
@@ -183,7 +193,7 @@ sendRoutes.post("/", async (c) => {
     cc: cc.length ? cc : undefined,
     bcc: bcc.length ? bcc : undefined,
     subject,
-    text: html && !text ? undefined : text,
+    text,
     html,
     messageId: `<${rfcMessageId}>`,
     inReplyTo: inReplyToHeader,
