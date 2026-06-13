@@ -7,8 +7,9 @@ Cloudflare account.
 > phase that changes setup adds its steps here. **Current as of Phase 5** — receiving
 > works (mail to any address on your domain is parsed and stored in R2/D1), reading
 > works (sign in, browse folders, read HTML mail safely, star/archive/trash, download
-> attachments, search), **sending works** (compose, reply/reply-all/forward with
-> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks),
+> attachments, search), **sending works** (a rich-text composer that produces HTML mail
+> with a plaintext fallback, reply/reply-all/forward with quoting, attachments, a Sent
+> folder, and bounce/complaint flagging via webhooks),
 > **multiple users** can share inboxes with `owner`/`member` roles, send only from
 > addresses they own, and onboard new accounts via one-time invite links (step 15), and
 > **admins add new domains from the webmail itself** — the Cloudflare zone, Email
@@ -249,10 +250,11 @@ the address of the identity you choose in the composer.
 > invite or the members panel — step 15) automatically mints their send-as identities for
 > every address of that mailbox, so shared inboxes and aliases work with no manual SQL.
 
-Now sign in, click **Compose**, send a message to an external account (e.g. your Gmail),
-and confirm it arrives. In Gmail's **Show original**, DKIM and SPF should both show
-**PASS**. Reply from Gmail and the reply lands back in your inbox, threaded with your
-sent message.
+Now sign in, click **Compose**, format a line or two (bold, a bullet list, a link), and
+send a message to an external account (e.g. your Gmail), then confirm it arrives with the
+formatting intact. In Gmail's **Show original**, DKIM and SPF should both show **PASS**,
+and the message is `multipart/alternative` (an HTML part plus a plaintext fallback).
+Reply from Gmail and the reply lands back in your inbox, threaded with your sent message.
 
 ## 14. Bounce & complaint webhooks (optional)
 
