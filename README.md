@@ -1,3 +1,18 @@
+<div align="center">
+  <a href="images/mailbase-demo.mp4">
+    <img src="images/mailbase-demo.gif" width="900"
+         alt="mailbase in ~45 seconds — an email arrives in the inbox, you read it in the three-pane webmail, then add a brand-new domain straight from the UI" />
+  </a>
+  <p><em>▶ 45-second demo — receive, read, and add a domain. Click for full-quality video.</em></p>
+</div>
+
+<!--
+  The GIF above autoplays muted in the README. For a true autoplaying <video>
+  (best quality), drag images/mailbase-demo.mp4 into a GitHub issue or comment to get a
+  user-images.githubusercontent.com URL, then swap the block above for that .mp4 link on
+  its own line. The MP4/WebM/poster are committed under images/ either way.
+-->
+
 <img src="images/logo.svg" alt="mailbase logo" width="72" height="72" />
 
 # mailbase
@@ -87,6 +102,7 @@ packages/api/            # Hono REST API, auth, send
 packages/web/            # React SPA (Vite + Tailwind)
 packages/shared/         # types, Drizzle schema, MailSender interface
 migrations/              # D1 SQL migrations (numbered, append-only)
+marketing/               # Remotion source for the README demo video (standalone)
 docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
 ```
 

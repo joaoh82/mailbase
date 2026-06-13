@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/*
+ * The demo reuses the web app's slate + sky palette. Tailwind v4 auto-detects
+ * the classes used across src/, so no config file is needed here — the only
+ * global rule we want is a sensible default font stack matching the SPA.
+ */
+* {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
