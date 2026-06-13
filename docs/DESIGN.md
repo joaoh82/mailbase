@@ -87,7 +87,7 @@ outbound relay) but with one deployment serving every domain, instead of one sta
 | API | **Hono** on a Worker | Tiny, fast, the standard Workers framework |
 | Webmail UI | **React** (Vite SPA) on Cloudflare Pages/Workers assets | Chosen; biggest ecosystem |
 | UI components | Tailwind CSS + shadcn/ui | Fast path to a clean inbox UI |
-| Compose editor | **Tiptap** (ProseMirror) in `packages/web` | Small WYSIWYG: bold/italic/lists/headings/links → HTML email |
+| Compose editor | **Tiptap** (ProseMirror) in `packages/web`, lazy-loaded | Small WYSIWYG: bold/italic/lists/headings/links → HTML email; code-split into its own async chunk so it stays out of the initial bundle (MAIL-6) |
 | Outbound | **Resend** (behind `MailSender` interface) | Chosen; simple multi-domain DKIM, free 3k/mo |
 | Auth | Email + password, sessions in D1 | Chosen; no third-party identity |
 | Attachments | R2 (same bucket, `attachments/` prefix) | Served via signed URLs from API Worker |
