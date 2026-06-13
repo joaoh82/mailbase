@@ -19,6 +19,10 @@ export interface Mailbox {
 
 export type Folder = "inbox" | "sent" | "archive" | "trash" | "spam";
 
+export type MessageDirection = "inbound" | "outbound";
+/** '' (fine), or 'bounced' / 'complained' once a provider webhook reports it. */
+export type DeliveryStatus = "" | "bounced" | "complained" | string;
+
 export interface MessageListItem {
   id: string;
   threadId: string | null;
@@ -31,6 +35,8 @@ export interface MessageListItem {
   isStarred: boolean;
   hasAttachments: boolean;
   folder: Folder;
+  direction: MessageDirection;
+  deliveryStatus: DeliveryStatus;
 }
 
 export interface AttachmentMeta {
@@ -171,4 +177,59 @@ export function mintAttachmentUrl(
   attachmentId: string,
 ): Promise<{ url: string; expiresAt: string }> {
   return request(`/api/messages/${messageId}/attachments/${attachmentId}/url`);
+}
+
+export interface Identity {
+  id: string;
+  address: string;
+  displayName: string;
+  mailboxId: string;
+}
+
+export function listIdentities(): Promise<{ identities: Identity[] }> {
+  return request("/api/send/identities");
+}
+
+export interface SendPayload {
+  identityId: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  uploadIds?: string[];
+}
+
+export function sendMail(
+  payload: SendPayload,
+): Promise<{ message: MessageDetail; providerMessageId: string }> {
+  return request("/api/send", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface UploadResult {
+  uploadId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+/** Stages one attachment in R2 (multipart, so it sets its own Content-Type). */
+export async function uploadAttachment(file: File): Promise<UploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/send/uploads", {
+    method: "POST",
+    headers: { "X-CSRF-Token": csrfToken },
+    body: form,
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as UploadResult;
 }

@@ -3,6 +3,7 @@ import {
   Inbox,
   LogOut,
   OctagonAlert,
+  PenSquare,
   Send,
   Trash2,
 } from "lucide-react";
@@ -24,6 +25,8 @@ export function Sidebar({
   selectedMailboxId,
   folder,
   searching,
+  canCompose,
+  onCompose,
   onSelectMailbox,
   onSelectFolder,
   onLogout,
@@ -33,6 +36,8 @@ export function Sidebar({
   selectedMailboxId: string | null;
   folder: Folder;
   searching: boolean;
+  canCompose: boolean;
+  onCompose: () => void;
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
   onLogout: () => void;
@@ -42,6 +47,14 @@ export function Sidebar({
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900 p-3">
       <h1 className="px-2 text-lg font-semibold tracking-tight">mailbase</h1>
+
+      <Button
+        className="mt-4 w-full"
+        disabled={!canCompose}
+        onClick={onCompose}
+      >
+        <PenSquare className="h-4 w-4" /> Compose
+      </Button>
 
       <label className="mt-4 block px-2 text-xs font-medium uppercase tracking-wide text-slate-500">
         Mailbox

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  listIdentities,
   listMailboxes,
   listMessages,
   logout,
@@ -8,11 +9,14 @@ import {
   setRead,
   setStarred,
   type Folder,
+  type Identity,
   type Mailbox,
+  type MessageDetail,
   type MessageListItem,
   type User,
 } from "../api";
 import { isAuthError } from "../App";
+import { ComposeModal, type ComposeInitial } from "./ComposeModal";
 import { MessageList } from "./MessageList";
 import { Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
@@ -20,6 +24,21 @@ import { ThreadView } from "./ThreadView";
 export interface Selection {
   messageId: string;
   threadId: string | null;
+}
+
+export type ComposeKind = "reply" | "replyAll" | "forward";
+
+const reSubject = (s: string) => (/^re:/i.test(s.trim()) ? s : `Re: ${s}`);
+const fwdSubject = (s: string) =>
+  /^fwd?:/i.test(s.trim()) ? s : `Fwd: ${s}`;
+
+function quoteBody(message: MessageDetail): string {
+  const when = new Date(message.date).toLocaleString();
+  const quoted = (message.bodyText || "")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return `\n\nOn ${when}, ${message.fromAddr} wrote:\n${quoted}\n`;
 }
 
 export function MailApp({
@@ -38,6 +57,9 @@ export function MailApp({
   const [loadingList, setLoadingList] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [identities, setIdentities] = useState<Identity[]>([]);
+  const [compose, setCompose] = useState<ComposeInitial | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
 
   // Any API failure lands here; a dead session falls back to the login form.
@@ -63,7 +85,14 @@ export function MailApp({
 
   useEffect(refreshMailboxes, [refreshMailboxes]);
 
-  // (Re)load page one whenever mailbox, folder, or active search changes.
+  // Send-as identities, fetched once; the compose modal needs them.
+  useEffect(() => {
+    listIdentities()
+      .then(({ identities }) => setIdentities(identities))
+      .catch(fail);
+  }, [fail]);
+
+  // (Re)load page one whenever mailbox, folder, active search, or a send change.
   useEffect(() => {
     if (!mailboxId) return;
     const seq = ++loadSeq.current;
@@ -88,7 +117,7 @@ export function MailApp({
       .finally(() => {
         if (seq === loadSeq.current) setLoadingList(false);
       });
-  }, [mailboxId, folder, activeQuery, fail]);
+  }, [mailboxId, folder, activeQuery, reloadNonce, fail]);
 
   const loadMore = useCallback(() => {
     if (!mailboxId || !nextCursor || loadingList || activeQuery) return;
@@ -164,6 +193,70 @@ export function MailApp({
     logout().catch(() => undefined).finally(onSignedOut);
   }, [onSignedOut]);
 
+  // Refresh the current folder + unread counts after a message is sent (so the
+  // Sent folder shows it immediately).
+  const handleSent = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+    refreshMailboxes();
+  }, [refreshMailboxes]);
+
+  const ownAddresses = useMemo(
+    () => new Set(mailboxes.map((m) => m.address.toLowerCase())),
+    [mailboxes],
+  );
+
+  const identityForMailbox = useCallback(
+    (forMailboxId: string | null): string | undefined => {
+      const match = forMailboxId
+        ? identities.find((i) => i.mailboxId === forMailboxId)
+        : undefined;
+      return (match ?? identities[0])?.id;
+    },
+    [identities],
+  );
+
+  const handleComposeNew = useCallback(() => {
+    setCompose({ identityId: identityForMailbox(mailboxId) });
+  }, [identityForMailbox, mailboxId]);
+
+  // Reply / reply-all / forward, prefilled from a message (it has the body).
+  const handleReply = useCallback(
+    (message: MessageDetail, kind: ComposeKind) => {
+      const identityId = identityForMailbox(message.mailboxId);
+      if (kind === "forward") {
+        const when = new Date(message.date).toLocaleString();
+        const block =
+          `\n\n---------- Forwarded message ----------\n` +
+          `From: ${message.fromAddr}\nDate: ${when}\n` +
+          `Subject: ${message.subject}\nTo: ${message.toAddrs.join(", ")}\n\n` +
+          `${message.bodyText || ""}\n`;
+        setCompose({
+          identityId,
+          subject: fwdSubject(message.subject),
+          body: block,
+        });
+        return;
+      }
+      const cc =
+        kind === "replyAll"
+          ? message.toAddrs.filter(
+              (addr) =>
+                !ownAddresses.has(addr.toLowerCase()) &&
+                addr.toLowerCase() !== message.fromAddr.toLowerCase(),
+            )
+          : [];
+      setCompose({
+        identityId,
+        to: message.fromAddr,
+        cc: cc.join(", "),
+        subject: reSubject(message.subject),
+        body: quoteBody(message),
+        inReplyTo: message.id,
+      });
+    },
+    [identityForMailbox, ownAddresses],
+  );
+
   const selectedMailbox = mailboxes.find((m) => m.id === mailboxId) ?? null;
 
   return (
@@ -174,6 +267,8 @@ export function MailApp({
         selectedMailboxId={mailboxId}
         folder={folder}
         searching={activeQuery !== ""}
+        canCompose={identities.length > 0}
+        onCompose={handleComposeNew}
         onSelectMailbox={(id) => {
           setMailboxId(id);
           setActiveQuery("");
@@ -205,7 +300,16 @@ export function MailApp({
         onToggleStar={handleToggleStar}
         onSetRead={handleSetRead}
         onMove={handleMove}
+        onReply={handleReply}
       />
+      {compose && (
+        <ComposeModal
+          identities={identities}
+          initial={compose}
+          onClose={() => setCompose(null)}
+          onSent={handleSent}
+        />
+      )}
     </div>
   );
 }
