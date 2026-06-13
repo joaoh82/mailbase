@@ -4,7 +4,7 @@
 
 .PHONY: help install dev dev-web build test typecheck \
         migrate-local migrate-remote setup seed-local seed-remote \
-        user-local user-remote \
+        user-local user-remote demo \
         deploy deploy-email deploy-api deploy-web
 
 MAILBOX ?= josh
@@ -23,6 +23,9 @@ dev-web: ## Run the web SPA dev server (Vite, port 5173)
 
 build: ## Build the web SPA
 	npm run build -w packages/web
+
+demo: ## Render the README demo video into images/ (Remotion; see marketing/)
+	cd marketing && npm install && npm run render
 
 test: ## Run Vitest across all workspaces
 	npm test

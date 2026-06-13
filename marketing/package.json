@@ -1,0 +1,32 @@
+{
+  "name": "@mailbase/marketing",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Remotion source for the mailbase README demo video. Standalone project — deliberately NOT an npm workspace, so Remotion + its bundled Chromium stay out of the root install and CI.",
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio",
+    "studio": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "render": "npm run render:mp4 && npm run render:webm && npm run render:gif && npm run render:poster",
+    "render:mp4": "remotion render Demo ../images/mailbase-demo.mp4 --codec=h264 --crf=23 --muted",
+    "render:webm": "remotion render Demo ../images/mailbase-demo.webm --codec=vp9 --crf=34 --muted",
+    "render:gif": "ffmpeg -y -i ../images/mailbase-demo.mp4 -vf \"fps=10,scale=760:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=80:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4\" ../images/mailbase-demo.gif",
+    "render:poster": "remotion still Demo ../images/mailbase-demo-poster.png --frame=600"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.477",
+    "@remotion/tailwind-v4": "4.0.477",
+    "@remotion/transitions": "4.0.477",
+    "lucide-react": "^1.18.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "4.0.477"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.0"
+  }
+}
