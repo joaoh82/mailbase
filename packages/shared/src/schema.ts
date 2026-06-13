@@ -213,6 +213,12 @@ export const messages = sqliteTable(
       .default(sql`(unixepoch())`),
     // RFC 5322 Message-ID without angle brackets; '' when the header is absent.
     messageIdHeader: text("message_id_header").notNull().default(""),
+    // Outbound only (migration 0005): the provider's (Resend) id for the
+    // accepted message, used to correlate bounce/complaint webhooks; '' inbound.
+    providerMessageId: text("provider_message_id").notNull().default(""),
+    // '' for inbound and freshly-sent mail; 'bounced' / 'complained' once a
+    // webhook reports a problem, surfaced in the webmail.
+    deliveryStatus: text("delivery_status").notNull().default(""),
   },
   (table) => [
     index("idx_messages_mailbox_folder_date").on(
@@ -225,6 +231,7 @@ export const messages = sqliteTable(
       table.mailboxId,
       table.messageIdHeader,
     ),
+    index("idx_messages_provider_message_id").on(table.providerMessageId),
     // One copy of a message per mailbox; '' (no Message-ID) is exempt.
     uniqueIndex("idx_messages_mailbox_msgid_unique")
       .on(table.mailboxId, table.messageIdHeader)

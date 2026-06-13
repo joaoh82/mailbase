@@ -8,6 +8,7 @@ export interface MailAttachment {
 }
 
 export interface OutboundMail {
+  /** RFC 5322 mailbox, e.g. `Josh <josh@example.com>` or `josh@example.com`. */
   from: string;
   to: string[];
   cc?: string[];
@@ -15,7 +16,15 @@ export interface OutboundMail {
   subject: string;
   text?: string;
   html?: string;
+  /**
+   * RFC 5322 Message-ID for this message, angle brackets included
+   * (`<id@domain>`). We mint and store it so replies thread back to us; the
+   * adapter sets it as the outgoing `Message-ID` header.
+   */
+  messageId?: string;
+  /** Parent message's Message-ID, angle brackets included. */
   inReplyTo?: string;
+  /** Full References chain, each id with angle brackets, oldest first. */
   references?: string[];
   attachments?: MailAttachment[];
 }
