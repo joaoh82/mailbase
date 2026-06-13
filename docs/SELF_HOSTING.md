@@ -397,7 +397,8 @@ Cloudflare/Resend secrets unset and let the admin UI simulate.
 
 ## Coming in later phases
 
-Each of these will extend this guide when it ships:
+Each of these will extend this guide when it ships (see the
+[roadmap](ROADMAP.md) for the full picture):
 
 - **Phase 6 — migrate & harden:** move remaining domains over, spam handling, DMARC
   tightening, rate limiting, scheduled R2 backups, and monitoring/alerting.
