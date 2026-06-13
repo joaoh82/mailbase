@@ -218,8 +218,14 @@ describe("attachments", () => {
     const minted = await get("/api/messages/msg-rich/attachments/att-1/url");
     const { url } = (await minted.json()) as { url: string };
 
+    // Flip the first signature character to a guaranteed-different hex digit
+    // (replacing it with a fixed "0" is a no-op ~1/16 of the time, when the
+    // signature already starts with "0").
     const tampered = await SELF.fetch(
-      `http://webmail.local${url.replace(/sig=./, "sig=0")}`,
+      `http://webmail.local${url.replace(
+        /sig=(.)/,
+        (_, c) => `sig=${c === "0" ? "1" : "0"}`,
+      )}`,
     );
     expect(tampered.status).toBe(403);
 
