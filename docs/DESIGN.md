@@ -231,6 +231,10 @@ login needs the Workers Paid plan. Hard ceiling around $5–10/mo at much higher
 
 ## 9. Development Plan
 
+> For the quick, status-at-a-glance view of these phases, see
+> [ROADMAP.md](ROADMAP.md). This section is the detailed plan and milestone
+> definitions.
+
 ### Phase 0 — Foundations (a weekend)
 - Move one test domain's nameservers to Cloudflare (use a low-value domain first).
 - Monorepo scaffold, Wrangler config, D1 database + initial migration, R2 bucket.
