@@ -1,6 +1,8 @@
-// Emits SQL that creates (or password-resets) a login user and grants them
-// membership of the seed mailbox. Run via `make user-local EMAIL=... PASSWORD=...`
-// or `make user-remote ...`, which pipe the output through `wrangler d1 execute`.
+// Emits SQL that creates (or password-resets) a login user, grants them
+// membership of the seed mailbox, and gives them a send-as identity for every
+// address in that mailbox (so sending works from day one). Run via
+// `make user-local EMAIL=... PASSWORD=...` or `make user-remote ...`, which pipe
+// the output through `wrangler d1 execute`.
 //
 //   npx tsx scripts/create-user.ts <email> <password> [display-name] [mailbox-id]
 //
@@ -40,4 +42,12 @@ ON CONFLICT(email_login) DO UPDATE SET password_hash = excluded.password_hash;
 INSERT OR IGNORE INTO mailbox_members (mailbox_id, user_id, role)
 SELECT '${escape(mailboxId)}', id, 'owner' FROM users
 WHERE email_login = lower('${escape(email)}');
+
+-- A send-as identity per address in the mailbox; (user_id, address_id) is
+-- unique, so OR IGNORE keeps re-runs idempotent.
+INSERT OR IGNORE INTO identities (id, user_id, address_id, display_name)
+SELECT lower(hex(randomblob(16))), u.id, a.id, '${escape(displayName)}'
+FROM users u
+JOIN addresses a ON a.mailbox_id = '${escape(mailboxId)}'
+WHERE u.email_login = lower('${escape(email)}');
 `);

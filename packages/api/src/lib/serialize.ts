@@ -16,6 +16,8 @@ export function messageListItem(m: typeof messages.$inferSelect) {
     isStarred: m.isStarred,
     hasAttachments: m.hasAttachments,
     folder: m.folder,
+    direction: m.direction,
+    deliveryStatus: m.deliveryStatus,
   };
 }
 

@@ -3,13 +3,13 @@ import {
   attachments,
   domains,
   messages,
+  normalizeSubject,
   threads,
 } from "@mailbase/shared";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { parseInbound } from "./parse";
-import { normalizeSubject } from "./thread";
 
 const SNIPPET_LENGTH = 160;
 

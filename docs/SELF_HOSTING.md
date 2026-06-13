@@ -4,10 +4,11 @@ This guide walks you from a fresh clone to your own mailbase deployment on your 
 Cloudflare account.
 
 > **Kept current per phase.** This document tracks the project as it develops; each
-> phase that changes setup adds its steps here. **Current as of Phase 2** — that means
-> receiving works (mail to any address on your domain is parsed and stored in R2/D1)
-> and reading works: sign in to the webmail, browse folders, read HTML mail safely,
-> star/archive/trash, download attachments, and search. Sending arrives with Phase 3.
+> phase that changes setup adds its steps here. **Current as of Phase 3** — receiving
+> works (mail to any address on your domain is parsed and stored in R2/D1), reading
+> works (sign in, browse folders, read HTML mail safely, star/archive/trash, download
+> attachments, search), and **sending works**: compose, reply/reply-all/forward with
+> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks.
 
 ## Prerequisites
 
@@ -216,6 +217,55 @@ remote images blocked until you click **Load images** on a message.
 > **Workers Paid plan** (see Prerequisites): on the free plan the 10ms CPU limit kills
 > the argon2id hash before login completes.
 
+## 13. Enable sending with Resend
+
+Outbound mail goes through [Resend](https://resend.com) (behind the `MailSender`
+interface, so it can be swapped later). To send for real:
+
+1. Create a Resend account and **add your domain** (Resend dashboard → **Domains → Add
+   Domain**). Use the same domain you receive on.
+2. Resend shows DKIM/SPF DNS records to add. Add them in the Cloudflare dashboard for
+   your zone (**DNS → Records**), then click **Verify** in Resend. Wait for the domain
+   to show **Verified**.
+3. Create an API key (**API Keys → Create**) with send permission, and set it as a
+   Worker secret:
+
+   ```sh
+   npx wrangler secret put RESEND_API_KEY -c packages/api/wrangler.jsonc
+   ```
+
+Without `RESEND_API_KEY` the API falls back to a mock sender: compose/send still works
+and lands in the Sent folder, but nothing is delivered. With it set, mail is sent from
+the address of the identity you choose in the composer.
+
+> **Send-as identities.** You can only send from an address you have an *identity* for.
+> `make user-*` (step 12) now creates one identity per address in your seed mailbox, so
+> your seeded addresses work immediately. Adding more is a row in the `identities` table
+> (`user_id` → `address_id`); a full UI for this arrives in Phase 4.
+
+Now sign in, click **Compose**, send a message to an external account (e.g. your Gmail),
+and confirm it arrives. In Gmail's **Show original**, DKIM and SPF should both show
+**PASS**. Reply from Gmail and the reply lands back in your inbox, threaded with your
+sent message.
+
+## 14. Bounce & complaint webhooks (optional)
+
+Resend reports bounces and spam complaints via webhooks; wiring this up flags the
+affected message in the webmail.
+
+1. In Resend, **Webhooks → Add Webhook**. Set the endpoint to
+   `https://mailbase-web.<your-subdomain>.workers.dev/api/webhooks/resend` and subscribe
+   to the **`email.bounced`** and **`email.complained`** events.
+2. Resend shows a signing secret (`whsec_…`). Set it as a Worker secret:
+
+   ```sh
+   npx wrangler secret put RESEND_WEBHOOK_SECRET -c packages/api/wrangler.jsonc
+   ```
+
+The endpoint verifies every request's Svix signature against this secret, so it is safe
+to expose publicly. Messages that bounce or are marked as spam show a red notice in the
+thread view.
+
 ## Local development
 
 ```sh
@@ -235,12 +285,15 @@ be inserted by the email-worker tests or by seeding rows by hand.
 
 Local state (D1 data, R2 objects) lives under `.wrangler/state/` and is gitignored.
 Secrets for local dev go in `.dev.vars` files (gitignored) — never commit them; in
-production use `wrangler secret put`. As of Phase 2 the API worker needs one
-secret: `SIGNING_KEY` (see `packages/api/.dev.vars.example`).
+production use `wrangler secret put`. As of Phase 3 the API worker uses these secrets
+(see `packages/api/.dev.vars.example`): `SIGNING_KEY` (required, signed attachment
+URLs), `RESEND_API_KEY` (optional — unset uses the mock sender), and
+`RESEND_WEBHOOK_SECRET` (optional — only to verify bounce/complaint webhooks).
 
 ## Coming in later phases
 
 Each of these will extend this guide when it ships:
 
-- **Phase 3 — sending:** verify your domain at Resend, set the `RESEND_API_KEY` secret.
+- **Phase 4 — multi-account & permissions:** shared inboxes, aliases, per-user send-as
+  enforcement, an account switcher, and a UI for managing identities.
 - **Phase 5 — multi-domain:** add further domains from the admin UI instead of this runbook.

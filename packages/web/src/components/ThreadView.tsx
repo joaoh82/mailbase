@@ -5,7 +5,7 @@ import {
   type MessageDetail,
 } from "../api";
 import { isAuthError } from "../App";
-import type { Selection } from "./MailApp";
+import type { ComposeKind, Selection } from "./MailApp";
 import { MessageView } from "./MessageView";
 
 export function ThreadView({
@@ -14,12 +14,14 @@ export function ThreadView({
   onToggleStar,
   onSetRead,
   onMove,
+  onReply,
 }: {
   selection: Selection | null;
   onAuthError: () => void;
   onToggleStar: (item: { id: string; isStarred: boolean }) => void;
   onSetRead: (id: string, isRead: boolean) => void;
   onMove: (id: string, target: "inbox" | "archive" | "trash") => void;
+  onReply: (message: MessageDetail, kind: ComposeKind) => void;
 }) {
   const [messages, setMessages] = useState<MessageDetail[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function ThreadView({
             onToggleStar={onToggleStar}
             onSetRead={onSetRead}
             onMove={onMove}
+            onReply={onReply}
           />
         ))}
       </div>

@@ -1,10 +1,14 @@
 import {
+  AlertTriangle,
   Archive,
   Download,
+  Forward,
   Image,
   Mail,
   MailOpen,
   Paperclip,
+  Reply,
+  ReplyAll,
   Star,
   Trash2,
   Undo2,
@@ -18,8 +22,14 @@ import {
 } from "../api";
 import { buildEmailSrcdoc, EMAIL_IFRAME_SANDBOX } from "../email-html";
 import { cn } from "../lib/utils";
+import type { ComposeKind } from "./MailApp";
 import { formatListDate } from "./MessageList";
 import { Button } from "./ui/button";
+
+const DELIVERY_NOTICE: Record<string, string> = {
+  bounced: "This message bounced — the recipient's server rejected it.",
+  complained: "The recipient marked this message as spam.",
+};
 
 export function MessageView({
   message,
@@ -27,12 +37,14 @@ export function MessageView({
   onToggleStar,
   onSetRead,
   onMove,
+  onReply,
 }: {
   message: MessageDetail;
   initiallyExpanded: boolean;
   onToggleStar: (item: { id: string; isStarred: boolean }) => void;
   onSetRead: (id: string, isRead: boolean) => void;
   onMove: (id: string, target: "inbox" | "archive" | "trash") => void;
+  onReply: (message: MessageDetail, kind: ComposeKind) => void;
 }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   // Local mirrors so the buttons reflect actions immediately even though the
@@ -77,6 +89,30 @@ export function MessageView({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Reply"
+            onClick={() => onReply(message, "reply")}
+          >
+            <Reply className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Reply all"
+            onClick={() => onReply(message, "replyAll")}
+          >
+            <ReplyAll className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Forward"
+            onClick={() => onReply(message, "forward")}
+          >
+            <Forward className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -148,6 +184,13 @@ export function MessageView({
           )}
         </div>
       </header>
+
+      {DELIVERY_NOTICE[message.deliveryStatus] && (
+        <div className="flex items-center gap-2 border-b border-red-900 bg-red-950 px-4 py-2 text-xs text-red-300">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {DELIVERY_NOTICE[message.deliveryStatus]}
+        </div>
+      )}
 
       <MessageBody message={message} />
 

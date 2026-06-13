@@ -16,6 +16,9 @@ export default defineConfig(async () => {
           bindings: {
             TEST_MIGRATIONS: migrations,
             SIGNING_KEY: "test-signing-key",
+            // whsec_ + base64("testsecret"). RESEND_API_KEY is intentionally
+            // unset so the API uses MockMailSender — tests never reach Resend.
+            RESEND_WEBHOOK_SECRET: "whsec_dGVzdHNlY3JldA",
           },
         },
       }),

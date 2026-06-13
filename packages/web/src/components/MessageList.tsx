@@ -200,7 +200,9 @@ function MessageRow({
               item.isRead ? "text-slate-400" : "font-semibold text-slate-100",
             )}
           >
-            {item.fromAddr}
+            {item.direction === "outbound"
+              ? `To ${item.toAddrs.join(", ") || "(no recipient)"}`
+              : item.fromAddr}
           </span>
           <span className="shrink-0 text-xs text-slate-500">
             {formatListDate(item.date)}

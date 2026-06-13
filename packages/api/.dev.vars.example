@@ -1,3 +1,12 @@
 # Copy to .dev.vars (gitignored) for local development.
-# In production: npx wrangler secret put SIGNING_KEY -c packages/api/wrangler.jsonc
+# In production: npx wrangler secret put <NAME> -c packages/api/wrangler.jsonc
 SIGNING_KEY="dev-only-signing-key-change-me"
+
+# Outbound mail (Phase 3). Leave RESEND_API_KEY unset locally to use the mock
+# sender: compose/send works and is recorded in the Sent folder, but nothing is
+# actually delivered. Set it to a real Resend key to send for real.
+# RESEND_API_KEY="re_xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Svix signing secret for verifying Resend bounce/complaint webhooks. Only
+# needed if you wire up the webhook locally (e.g. behind a tunnel).
+# RESEND_WEBHOOK_SECRET="whsec_xxxxxxxxxxxxxxxxxxxxxxxx"

@@ -4,6 +4,7 @@ import {
   attachments,
   domains,
   hashPassword,
+  identities,
   loginAttempts,
   mailboxes,
   mailboxMembers,
@@ -49,6 +50,7 @@ export async function seed() {
   await db.delete(messages);
   await db.delete(threads);
   await db.delete(mailboxMembers);
+  await db.delete(identities);
   await db.delete(addresses);
   await db.update(domains).set({ catchAllMailboxId: null });
   await db.delete(mailboxes);
@@ -83,6 +85,16 @@ export async function seed() {
   await db.insert(mailboxMembers).values([
     { mailboxId: "mbx-josh", userId: "user-josh", role: "owner" },
     { mailboxId: "mbx-other", userId: "user-other", role: "owner" },
+  ]);
+  // Addresses + send-as identities: each user owns the identity for their own
+  // mailbox's address (Phase 3 send-as enforcement is by identity ownership).
+  await db.insert(addresses).values([
+    { id: "addr-josh", domainId: "dom-test", localPart: "josh", mailboxId: "mbx-josh" },
+    { id: "addr-other", domainId: "dom-test", localPart: "other", mailboxId: "mbx-other" },
+  ]);
+  await db.insert(identities).values([
+    { id: "idn-josh", userId: "user-josh", addressId: "addr-josh", displayName: "Josh" },
+    { id: "idn-other", userId: "user-other", addressId: "addr-other", displayName: "Other" },
   ]);
   await db.insert(threads).values({
     id: "thr-1",
