@@ -1,3 +1,4 @@
+import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import {
@@ -49,6 +50,10 @@ export function RichTextEditor({
           HTMLAttributes: { rel: "noopener noreferrer nofollow" },
         },
       }),
+      // Not bundled in StarterKit (MAIL-7). The hint is rendered purely via a
+      // `data-placeholder` decoration and the `.is-editor-empty` CSS hook in
+      // index.css, so it never becomes part of getHTML()/getText() output.
+      Placeholder.configure({ placeholder: "Write your message…" }),
     ],
     content: initialContent,
     editorProps: {

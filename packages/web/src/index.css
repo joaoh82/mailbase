@@ -56,3 +56,18 @@ body,
   color: rgb(56 189 248); /* sky-400 */
   text-decoration: underline;
 }
+
+/*
+ * Empty-composer placeholder (MAIL-7). The Placeholder extension tags the
+ * empty first paragraph with `data-placeholder`; this pseudo-element overlays
+ * the hint without affecting layout (float/height:0) or clicks, and it
+ * disappears the moment the editor stops being empty. Rendered via CSS only,
+ * so the text is never part of the editor's HTML/plaintext output.
+ */
+.rte-content .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgb(100 116 139); /* slate-500 — matches the old textarea placeholder */
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
