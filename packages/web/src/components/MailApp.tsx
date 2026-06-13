@@ -19,17 +19,32 @@ import {
 import { isAuthError } from "../App";
 import { AdminPanel } from "./AdminPanel";
 import type { ComposeInitial } from "./ComposeModal";
-import { ManageMailboxModal } from "./ManageMailboxModal";
 import { MessageList } from "./MessageList";
 import { ALL_DOMAINS, ALL_INBOXES, Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
 
-// The composer pulls in Tiptap/ProseMirror (~300 KB), which the rest of the app
-// never touches. Load it on demand so it lands in its own async chunk instead
-// of the initial bundle; it's only rendered once `compose` is set (MAIL-6).
+// These modals pull in Tiptap/ProseMirror (~300 KB) for the rich-text editor,
+// which the rest of the app never touches. Load them on demand so the editor
+// stays in its own async chunk instead of the initial bundle (MAIL-6/MAIL-4):
+// the composer when `compose` is set, the manage/settings modals when opened.
 const ComposeModal = lazy(() =>
   import("./ComposeModal").then((m) => ({ default: m.ComposeModal })),
 );
+const ManageMailboxModal = lazy(() =>
+  import("./ManageMailboxModal").then((m) => ({ default: m.ManageMailboxModal })),
+);
+const SettingsModal = lazy(() =>
+  import("./SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
+
+// Shared loading shell for the lazy modals above.
+function ModalFallback() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <p className="text-sm text-slate-400">Loading…</p>
+    </div>
+  );
+}
 
 export interface Selection {
   messageId: string;
@@ -72,6 +87,7 @@ export function MailApp({
   const [compose, setCompose] = useState<ComposeInitial | null>(null);
   const [managing, setManaging] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
 
@@ -107,12 +123,16 @@ export function MailApp({
 
   useEffect(refreshMailboxes, [refreshMailboxes]);
 
-  // Send-as identities, fetched once; the compose modal needs them.
-  useEffect(() => {
+  // Send-as identities, with their resolved signatures; the composer and the
+  // settings modal need them. Re-fetched after membership/domain/signature
+  // changes so a new identity or an edited signature shows up immediately.
+  const refreshIdentities = useCallback(() => {
     listIdentities()
       .then(({ identities }) => setIdentities(identities))
       .catch(fail);
   }, [fail]);
+
+  useEffect(refreshIdentities, [refreshIdentities]);
 
   // (Re)load page one whenever mailbox, folder, active search, or a send change.
   useEffect(() => {
@@ -342,6 +362,7 @@ export function MailApp({
         }}
         onManage={() => setManaging(true)}
         onOpenAdmin={() => setAdminOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         onLogout={handleLogout}
       />
       <MessageList
@@ -385,18 +406,27 @@ export function MailApp({
         </Suspense>
       )}
       {managing && selectedMailbox && (
-        <ManageMailboxModal
-          mailbox={selectedMailbox}
-          currentUserId={user.id}
-          onClose={() => {
-            setManaging(false);
-            // Membership/identity changes may affect this user's view.
-            refreshMailboxes();
-            listIdentities()
-              .then(({ identities }) => setIdentities(identities))
-              .catch(fail);
-          }}
-        />
+        <Suspense fallback={<ModalFallback />}>
+          <ManageMailboxModal
+            mailbox={selectedMailbox}
+            currentUserId={user.id}
+            onClose={() => {
+              setManaging(false);
+              // Membership/identity/signature changes may affect this view.
+              refreshMailboxes();
+              refreshIdentities();
+            }}
+          />
+        </Suspense>
+      )}
+      {settingsOpen && (
+        <Suspense fallback={<ModalFallback />}>
+          <SettingsModal
+            identities={identities}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={refreshIdentities}
+          />
+        </Suspense>
       )}
       {adminOpen && (
         <AdminPanel
@@ -404,9 +434,7 @@ export function MailApp({
             setAdminOpen(false);
             // A new domain adds a mailbox + identities for this admin.
             refreshMailboxes();
-            listIdentities()
-              .then(({ identities }) => setIdentities(identities))
-              .catch(fail);
+            refreshIdentities();
           }}
         />
       )}

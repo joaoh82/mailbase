@@ -52,6 +52,8 @@ describe("identities", () => {
         address: "josh@testdomain.com",
         displayName: "Josh",
         mailboxId: "mbx-josh",
+        signature: "",
+        mailboxSignature: "",
       },
     ]);
   });

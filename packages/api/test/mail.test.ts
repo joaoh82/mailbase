@@ -49,6 +49,7 @@ describe("mailboxes", () => {
         address: "josh@testdomain.com",
         role: "owner",
         unread: 7, // 5 dated + thread reply + msg-rich; archived is read
+        signature: "",
       },
     ]);
   });

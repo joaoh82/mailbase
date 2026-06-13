@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mailbase/shared": "*",
     "@tanstack/react-virtual": "^3.14.2",
     "@tiptap/extension-placeholder": "^3.26.1",
     "@tiptap/pm": "^3.26.1",
