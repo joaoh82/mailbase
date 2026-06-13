@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { csrfProtection, requireAuth } from "./lib/auth";
+import { csrfProtection, requireAdmin, requireAuth } from "./lib/auth";
 import type { AppEnv } from "./lib/context";
+import { adminRoutes } from "./routes/admin";
 import { attachmentRoutes } from "./routes/attachments";
 import { authRoutes } from "./routes/auth";
 import { inviteRoutes, publicInviteRoutes } from "./routes/invites";
@@ -33,6 +34,10 @@ api.route("/messages", messageRoutes);
 api.route("/threads", threadRoutes);
 api.route("/send", sendRoutes);
 api.route("/invites", inviteRoutes);
+// Domain administration (Phase 5): a further requireAdmin gate, so only global
+// admins can add or manage domains.
+api.use("/admin/*", requireAdmin);
+api.route("/admin", adminRoutes);
 
 app.route("/api", api);
 

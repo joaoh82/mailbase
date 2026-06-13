@@ -3,6 +3,7 @@ import {
   identities,
   type MailboxRole,
   mailboxMembers,
+  users,
 } from "@mailbase/shared";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
@@ -48,8 +49,8 @@ export async function canManageMailbox(
  * Add a user to a mailbox with the given role and give them a send-as identity
  * for every address of that mailbox (so shared-inbox members can send as the
  * shared address, and aliases each become a usable from-address). Idempotent:
- * re-granting an existing membership/identity is a no-op. Returns false if the
- * mailbox has no addresses is irrelevant — membership is still granted.
+ * re-granting an existing membership/identity is a no-op. A mailbox with no
+ * addresses yet simply mints no identities — membership is still granted.
  */
 export async function grantMailboxMembership(
   db: DrizzleD1Database,
@@ -77,6 +78,38 @@ export async function grantMailboxMembership(
         userId,
         addressId: address.id,
         displayName,
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/**
+ * Mint a send-as identity on a *newly added* address for every current member
+ * of its mailbox, so a fresh alias is immediately usable as a from-address by
+ * everyone who shares the mailbox. The counterpart to grantMailboxMembership,
+ * which mints identities the other way round (a new member × all addresses).
+ * Idempotent via the (user_id, address_id) unique index.
+ */
+export async function mintIdentitiesForAddress(
+  db: DrizzleD1Database,
+  addressId: string,
+  mailboxId: string,
+): Promise<void> {
+  const members = await db
+    .select({ userId: mailboxMembers.userId, displayName: users.displayName })
+    .from(mailboxMembers)
+    .innerJoin(users, eq(users.id, mailboxMembers.userId))
+    .where(eq(mailboxMembers.mailboxId, mailboxId))
+    .all();
+
+  for (const member of members) {
+    await db
+      .insert(identities)
+      .values({
+        id: crypto.randomUUID(),
+        userId: member.userId,
+        addressId,
+        displayName: member.displayName,
       })
       .onConflictDoNothing();
   }

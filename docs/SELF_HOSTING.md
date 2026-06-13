@@ -4,13 +4,16 @@ This guide walks you from a fresh clone to your own mailbase deployment on your 
 Cloudflare account.
 
 > **Kept current per phase.** This document tracks the project as it develops; each
-> phase that changes setup adds its steps here. **Current as of Phase 4** — receiving
+> phase that changes setup adds its steps here. **Current as of Phase 5** — receiving
 > works (mail to any address on your domain is parsed and stored in R2/D1), reading
 > works (sign in, browse folders, read HTML mail safely, star/archive/trash, download
 > attachments, search), **sending works** (compose, reply/reply-all/forward with
-> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks), and
+> quoting, attachments, a Sent folder, and bounce/complaint flagging via webhooks),
 > **multiple users** can share inboxes with `owner`/`member` roles, send only from
-> addresses they own, and onboard new accounts via one-time invite links (step 15).
+> addresses they own, and onboard new accounts via one-time invite links (step 15), and
+> **admins add new domains from the webmail itself** — the Cloudflare zone, Email
+> Routing, catch-all rule, and Resend DKIM/SPF records are all created via API, with a
+> domain switcher and unified "all inboxes" view in the UI (step 16).
 
 ## Prerequisites
 
@@ -297,6 +300,74 @@ each of its addresses, so any alias is immediately usable as a from-address.
 > Prefer the CLI? `make user-remote EMAIL=… PASSWORD=… MAILBOX_ID=…` still works for
 > creating/attaching users directly, and is handy for the very first admin.
 
+## 16. Add more domains from the admin UI (Phase 5)
+
+Steps 9–13 walk you through your first domain by hand. From Phase 5, an admin
+(`users.is_admin = 1`) can onboard **additional** domains end-to-end from the webmail —
+no console, no CLI — using the **Domains** panel (the globe button at the bottom of the
+sidebar). It drives the Cloudflare and Resend APIs for you; the one step that can't be
+automated is delegating nameservers at your registrar, which the UI spells out.
+
+### One-time: give mailbase API access to Cloudflare and Resend
+
+The API worker needs two new secrets to provision domains. Without them the Domains
+panel still works but runs in **simulation** (it records the domain row but provisions
+nothing, and says so).
+
+1. **Cloudflare API token.** Create one at
+   [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+   → Create Token → Custom token, with these **account-level** permissions so it can
+   create zones and configure Email Routing/DNS:
+
+   | Permission | Access |
+   | ---------- | ------ |
+   | Account → Zone | Edit |
+   | Zone → Zone Settings | Edit |
+   | Zone → DNS | Edit |
+   | Zone → Email Routing Rules | Edit |
+   | Zone → Email Routing Addresses | Edit |
+
+   ```sh
+   npx wrangler secret put CLOUDFLARE_API_TOKEN -c packages/api/wrangler.jsonc
+   ```
+
+2. **Cloudflare account id** (zones are created under it; `npx wrangler whoami` prints it):
+
+   ```sh
+   npx wrangler secret put CLOUDFLARE_ACCOUNT_ID -c packages/api/wrangler.jsonc
+   ```
+
+3. **Resend key with domain access.** Domain registration reuses `RESEND_API_KEY`
+   (step 13), but the key must have **Full access** (or at least domains write), not a
+   send-only key. If yours is send-only, create a new key and re-set the secret.
+
+> Optional: `EMAIL_WORKER_NAME` (defaults to `mailbase-email-worker`) if you renamed the
+> inbound worker, and `RESEND_REGION` (defaults to `us-east-1`) to host new Resend
+> domains in another AWS region. Both via `wrangler secret put` like above.
+
+### Add a domain
+
+1. Sign in as an admin and click **Domains** (sidebar) → **Add domain**. Enter the domain
+   and a default mailbox name (e.g. `hello`). mailbase creates/reuses the Cloudflare zone,
+   registers the domain with Resend, and inserts the `domains` row plus the default
+   mailbox/address (you become its owner).
+2. **Delegate nameservers (manual).** The panel shows the two Cloudflare nameservers —
+   set them at your registrar (e.g. GoDaddy), replacing the existing ones. The zone stays
+   **pending** until DNS propagates (minutes to hours); click **Status** to recheck.
+3. Once the zone is **active**, click **Provision**. This enables Email Routing, points the
+   catch-all rule at `mailbase-email-worker`, and writes Resend's DKIM/SPF records into the
+   zone. It is idempotent — safe to re-run.
+4. Click **Verify** to have Resend re-check its records, and watch the status badges go
+   green. Send a test message to `hello@yourdomain.com` to confirm inbound, and compose
+   from the new address to confirm outbound (DKIM/SPF pass).
+5. **Manage** the domain anytime from the same panel: add mailboxes and aliases, and set
+   the catch-all policy (deliver unknown recipients to a mailbox, or reject them). New
+   addresses automatically mint send-as identities for every member of their mailbox.
+
+In the webmail, a **Domain** switcher (shown once you have mailboxes in more than one
+domain) filters the mailbox list, and **All inboxes** shows every mailbox's mail in one
+list, each message tagged with where it landed.
+
 ## Local development
 
 ```sh
@@ -316,13 +387,17 @@ be inserted by the email-worker tests or by seeding rows by hand.
 
 Local state (D1 data, R2 objects) lives under `.wrangler/state/` and is gitignored.
 Secrets for local dev go in `.dev.vars` files (gitignored) — never commit them; in
-production use `wrangler secret put`. As of Phase 3 the API worker uses these secrets
-(see `packages/api/.dev.vars.example`): `SIGNING_KEY` (required, signed attachment
-URLs), `RESEND_API_KEY` (optional — unset uses the mock sender), and
-`RESEND_WEBHOOK_SECRET` (optional — only to verify bounce/complaint webhooks).
+production use `wrangler secret put`. The API worker uses these secrets (see
+`packages/api/.dev.vars.example`): `SIGNING_KEY` (required, signed attachment URLs),
+`RESEND_API_KEY` (optional — unset uses the mock sender), `RESEND_WEBHOOK_SECRET`
+(optional — only to verify bounce/complaint webhooks), and, for Phase 5 domain
+provisioning, `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (optional — unset runs the
+Domains panel in simulation, provisioning nothing). Locally you'll usually leave the
+Cloudflare/Resend secrets unset and let the admin UI simulate.
 
 ## Coming in later phases
 
 Each of these will extend this guide when it ships:
 
-- **Phase 5 — multi-domain:** add further domains from the admin UI instead of this runbook.
+- **Phase 6 — migrate & harden:** move remaining domains over, spam handling, DMARC
+  tightening, rate limiting, scheduled R2 backups, and monitoring/alerting.

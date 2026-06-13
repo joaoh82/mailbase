@@ -24,6 +24,11 @@ export const domains = sqliteTable("domains", {
   resendVerified: integer("resend_verified", { mode: "boolean" })
     .notNull()
     .default(false),
+  // Provider handles (migration 0007): the Cloudflare zone and Resend domain a
+  // domain was provisioned into from the admin UI. '' for manually-seeded
+  // domains, which the admin UI labels "managed manually".
+  cloudflareZoneId: text("cloudflare_zone_id").notNull().default(""),
+  resendDomainId: text("resend_domain_id").notNull().default(""),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

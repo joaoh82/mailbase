@@ -10,3 +10,15 @@ SIGNING_KEY="dev-only-signing-key-change-me"
 # Svix signing secret for verifying Resend bounce/complaint webhooks. Only
 # needed if you wire up the webhook locally (e.g. behind a tunnel).
 # RESEND_WEBHOOK_SECRET="whsec_xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Domain provisioning (Phase 5 — the admin "Domains" panel). Leave these unset
+# locally to run the panel in simulation (a domain row is created but nothing is
+# provisioned on Cloudflare/Resend). Set them to provision for real:
+#   CLOUDFLARE_API_TOKEN — token with account Zone:Edit, Zone Settings:Edit,
+#     DNS:Edit and Email Routing:Edit (see docs/SELF_HOSTING.md step 16).
+#   CLOUDFLARE_ACCOUNT_ID — account new zones are created under (wrangler whoami).
+# CLOUDFLARE_API_TOKEN="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# CLOUDFLARE_ACCOUNT_ID="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# Optional: inbound worker name (default mailbase-email-worker) and Resend region.
+# EMAIL_WORKER_NAME="mailbase-email-worker"
+# RESEND_REGION="us-east-1"

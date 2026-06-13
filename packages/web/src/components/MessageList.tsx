@@ -32,6 +32,7 @@ export function MessageList({
   activeQuery,
   selectedMessageId,
   error,
+  allInboxes = false,
   onSearch,
   onLoadMore,
   onSelect,
@@ -45,6 +46,9 @@ export function MessageList({
   activeQuery: string;
   selectedMessageId: string | null;
   error: string | null;
+  // The unified "all inboxes" view (Phase 5): no single mailbox, so search is
+  // hidden and each row is tagged with the mailbox it landed in.
+  allInboxes?: boolean;
   onSearch: (q: string) => void;
   onLoadMore: () => void;
   onSelect: (item: MessageListItem) => void;
@@ -80,29 +84,38 @@ export function MessageList({
   return (
     <section className="flex w-96 shrink-0 flex-col border-r border-slate-800">
       <header className="border-b border-slate-800 p-3">
-        <form onSubmit={submitSearch} className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            className="pl-8 pr-8"
-            placeholder={`Search ${mailbox?.address ?? "mail"}…`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {activeQuery && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-200"
-              onClick={() => onSearch("")}
-            >
-              <X className="h-4 w-4" />
-            </button>
+        {!allInboxes && (
+          <form onSubmit={submitSearch} className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+            <Input
+              className="pl-8 pr-8"
+              placeholder={`Search ${mailbox?.address ?? "mail"}…`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {activeQuery && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-200"
+                onClick={() => onSearch("")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </form>
+        )}
+        <p
+          className={cn(
+            "px-1 text-xs font-medium uppercase tracking-wide text-slate-500",
+            !allInboxes && "mt-2",
           )}
-        </form>
-        <p className="mt-2 px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-          {activeQuery
-            ? `Results for “${activeQuery}”`
-            : `${folder} — ${mailbox?.address ?? ""}`}
+        >
+          {allInboxes
+            ? `All inboxes — ${folder}`
+            : activeQuery
+              ? `Results for “${activeQuery}”`
+              : `${folder} — ${mailbox?.address ?? ""}`}
         </p>
       </header>
 
@@ -208,6 +221,11 @@ function MessageRow({
             {formatListDate(item.date)}
           </span>
         </div>
+        {item.mailboxAddress && (
+          <span className="mb-0.5 inline-block rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+            {item.mailboxAddress}
+          </span>
+        )}
         <div className="flex items-center gap-1.5">
           {item.hasAttachments && (
             <Paperclip className="h-3 w-3 shrink-0 text-slate-500" />
