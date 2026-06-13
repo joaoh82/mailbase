@@ -116,4 +116,61 @@ describe("swapSignature", () => {
     const out = swapSignature(body, "<p>old</p>", "<p>Cost: $5 & $$</p>", "");
     expect(out).toBe(`${COMPOSE_LEAD}<p>Cost: $5 & $$</p>`);
   });
+
+  // MAIL-11: when switching from a no-signature identity to a signed one on a
+  // reply/forward, the signature must land ABOVE the quote even if the editor
+  // re-serialized that quote with different (insignificant) whitespace, so the
+  // exact-suffix match no longer holds.
+  describe("tolerates quoted-region serialization drift", () => {
+    it("inserts above a quote whose inner whitespace drifted", () => {
+      const tracked = "<p>quoted</p>";
+      // The editor padded the quote's text node with spaces.
+      const body = `${COMPOSE_LEAD}<p> quoted </p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p><p> quoted </p>`);
+    });
+
+    it("inserts above a multi-paragraph quote with whitespace between blocks", () => {
+      const tracked = "<p>line1</p><p>line2</p>";
+      // A newline crept in between the quoted paragraphs.
+      const body = `${COMPOSE_LEAD}<p>line1</p>\n<p>line2</p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p><p>line1</p>\n<p>line2</p>`);
+    });
+
+    it("inserts above the quote when an empty paragraph drifted into the boundary", () => {
+      const tracked = "<p>quoted</p>";
+      // The editor left an extra empty paragraph between the lead and the quote,
+      // and re-spaced the quote itself.
+      const body = `${COMPOSE_LEAD}<p></p><p>quoted </p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p></p><p>sig</p><p>quoted </p>`);
+    });
+
+    it("preserves the drifted quote verbatim — it is located, not rewritten", () => {
+      const tracked = "<p>a</p><p>b</p>";
+      const drifted = "<p>a</p>\n  <p>b</p>\n";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("still removes an existing signature regardless of quote drift", () => {
+      // Branch 1 (replace-in-place) is independent of the quote, so a present
+      // previous signature is always swapped even if the quote drifted.
+      const tracked = "<p>quoted</p>";
+      const body = `${COMPOSE_LEAD}<p>old sig</p><p> quoted </p>`;
+      const out = swapSignature(body, "<p>old sig</p>", "<p>new sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>new sig</p><p> quoted </p>`);
+    });
+
+    it("falls back to appending when the quote was genuinely replaced, not just reformatted", () => {
+      // No suffix matches the tracked quote, so we don't guess a boundary —
+      // appending is the same safe fallback as before (no regression).
+      const tracked = "<p>quoted</p>";
+      const body = `${COMPOSE_LEAD}<p>totally different history</p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>totally different history</p><p>sig</p>`);
+    });
+  });
 });

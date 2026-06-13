@@ -38,6 +38,51 @@ export function buildComposeBody(
 }
 
 /**
+ * Collapse insignificant whitespace so two serializations of the same HTML
+ * compare equal: runs of whitespace become a single space, and any space that
+ * sits directly against a tag boundary (`<` or `>`) is dropped. Word spaces
+ * inside text are preserved. This is used only to *locate* the quoted region —
+ * never to rewrite it — so the original markup is always emitted unchanged.
+ */
+function normalizeForMatch(html: string): string {
+  return html
+    .replace(/\s+/g, " ")
+    .replace(/ ?</g, "<")
+    .replace(/> ?/g, ">")
+    .trim();
+}
+
+/**
+ * Find the index in `currentHtml` at which the quoted history begins, tolerant
+ * of whitespace drift in how the editor re-serialized that quote. Returns -1
+ * when the quoted region can't be confidently located (e.g. it was edited, not
+ * just reformatted), so the caller can fall back to appending.
+ *
+ * The quoted region is a suffix that starts at a tag, so only `<` positions are
+ * candidates. We take the earliest boundary whose normalized suffix equals the
+ * normalized quote — that captures the whole quote rather than a trailing
+ * fragment of it. Compose bodies are small and the matching boundary sits right
+ * after the user's typed text, so this resolves in a handful of comparisons.
+ */
+function findQuotedStart(currentHtml: string, quotedHtml: string): number {
+  if (!quotedHtml) return -1;
+  // Exact suffix — the common, no-drift case. Keeps the quoted region byte-exact.
+  if (currentHtml.endsWith(quotedHtml)) {
+    return currentHtml.length - quotedHtml.length;
+  }
+  const target = normalizeForMatch(quotedHtml);
+  if (!target) return -1;
+  for (let i = 0; i < currentHtml.length; i++) {
+    // Normalizing only removes characters, so once the remaining suffix is
+    // shorter than the normalized quote it can never match — stop early.
+    if (currentHtml.length - i < target.length) break;
+    if (currentHtml[i] !== "<") continue;
+    if (normalizeForMatch(currentHtml.slice(i)) === target) return i;
+  }
+  return -1;
+}
+
+/**
  * Swap the signature in an existing body when the From identity changes.
  *
  * All arguments are expected in the same normalized HTML space (the composer
@@ -47,8 +92,10 @@ export function buildComposeBody(
  *
  * - If the previous signature is present, it is replaced in place.
  * - Otherwise the new signature is inserted just above the quoted history (or
- *   appended for a fresh message). If there is no previous signature to find
- *   and nothing new to insert, the body is returned unchanged.
+ *   appended for a fresh message). The quoted region is located tolerantly, so
+ *   the signature still lands above the quote even if the editor reformatted
+ *   that quote's whitespace since it was first inserted. If there is no previous
+ *   signature to find and nothing new to insert, the body is returned unchanged.
  */
 export function swapSignature(
   currentHtml: string,
@@ -62,11 +109,12 @@ export function swapSignature(
     return currentHtml.replace(prevSignatureHtml, () => nextSignatureHtml);
   }
   if (!nextSignatureHtml) return currentHtml;
-  if (quotedHtml && currentHtml.endsWith(quotedHtml)) {
+  const quotedStart = findQuotedStart(currentHtml, quotedHtml);
+  if (quotedStart >= 0) {
     return (
-      currentHtml.slice(0, currentHtml.length - quotedHtml.length) +
+      currentHtml.slice(0, quotedStart) +
       nextSignatureHtml +
-      quotedHtml
+      currentHtml.slice(quotedStart)
     );
   }
   return currentHtml + nextSignatureHtml;
