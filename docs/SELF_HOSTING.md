@@ -504,6 +504,31 @@ fails `npm ci`/`npm run build` on that platform in CI rather than in someone's c
 npm 11+ (the `engines` check enforces it) keeps this pruning to the handful of optional
 peers above instead of the wider corruption npm 10 produces.
 
+### Security overrides (`overrides` in `package.json`)
+
+The root `package.json` carries an `overrides` block used to force a patched version of a
+transitive dependency when the package that pulls it in hasn't bumped yet. Current entries:
+
+- **`esbuild` → `0.28.1`** — `wrangler` and `@cloudflare/vitest-pool-workers` both pin
+  esbuild to *exactly* `0.27.3`, which `npm audit` flags for two high-severity advisories
+  ([GHSA-gv7w-rqvm-qjhr](https://github.com/advisories/GHSA-gv7w-rqvm-qjhr) — RCE via the
+  Deno install path; [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr)
+  — arbitrary file read in esbuild's Windows dev server). Neither path is reachable here
+  (we install via npm with an integrity-locked lockfile, never via Deno, and never run
+  `esbuild.serve()`), and esbuild is **build/test tooling only** — it bundles the Workers
+  and runs Vitest, and is never shipped into the Cloudflare Workers runtime. npm's only
+  offered "fix" was a destructive downgrade of wrangler and vitest-pool-workers, so we pin
+  esbuild up to the patched `0.28.1` (the vulnerable range ends at `0.28.0`) instead.
+
+  **Remove this override** once both `wrangler` and `@cloudflare/vitest-pool-workers` depend
+  on esbuild `> 0.28.0` on their own — check with `npm ls esbuild` after a dependency bump,
+  delete the entry, run `npm install`, and confirm `npm audit` stays clean.
+
+Adding or changing an override re-resolves the tree, so it triggers the same cross-platform
+optional-peer pruning described above — review `git diff package-lock.json` and restore any
+spuriously dropped `@emnapi/*` / `@floating-ui/*` / `@rolldown/binding-*` entries before
+committing.
+
 ## Coming in later phases
 
 Each of these will extend this guide when it ships (see the
