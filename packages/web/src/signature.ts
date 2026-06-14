@@ -53,16 +53,74 @@ function normalizeForMatch(html: string): string {
 }
 
 /**
- * Find the index in `currentHtml` at which the quoted history begins, tolerant
- * of whitespace drift in how the editor re-serialized that quote. Returns -1
- * when the quoted region can't be confidently located (e.g. it was edited, not
- * just reformatted), so the caller can fall back to appending.
+ * An empty block element, after whitespace-normalization: `<p></p>` or
+ * `<p><br></p>`. The outbound sanitizer emits void tags bare (`<br>`, never
+ * `<br/>`) and `normalizeForMatch` strips spaces hugging tag boundaries, so
+ * these two forms are exhaustive for a sanitized, normalized body.
+ */
+const EMPTY_BLOCK = /<p>(?:<br>)?<\/p>/g;
+const LEADING_EMPTY_BLOCK = /^<p>(?:<br>)?<\/p>/;
+
+/**
+ * Like {@link normalizeForMatch}, but additionally drops empty block elements
+ * wherever they appear, so an empty paragraph that the editor added to — or
+ * removed from — the *middle* of the quoted region doesn't defeat the match.
+ * Like `normalizeForMatch`, this is only ever used to *locate* the quote; the
+ * original markup is still spliced verbatim, so the emitted quote is unchanged.
+ */
+function normalizeForMatchLoose(html: string): string {
+  return normalizeForMatch(html).replace(EMPTY_BLOCK, "");
+}
+
+/**
+ * Scan `currentHtml` left-to-right for the earliest `<`-tag boundary whose
+ * `normalize`d suffix equals `target`. Returns that index, or -1 if none match.
  *
  * The quoted region is a suffix that starts at a tag, so only `<` positions are
- * candidates. We take the earliest boundary whose normalized suffix equals the
- * normalized quote — that captures the whole quote rather than a trailing
- * fragment of it. Compose bodies are small and the matching boundary sits right
- * after the user's typed text, so this resolves in a handful of comparisons.
+ * candidates, and we take the *earliest* match so the whole quote is captured
+ * rather than a trailing fragment of it.
+ *
+ * When `skipLeadingEmpty` is set, boundaries whose suffix begins with an empty
+ * paragraph are skipped: those leading empties belong to the head (the compose
+ * lead-in, or a blank line at the typed-text/quote boundary) and matching there
+ * would place the signature too high. The real quote content begins with a
+ * non-empty block, so skipping never discards the correct boundary.
+ */
+function scanQuoteBoundary(
+  currentHtml: string,
+  target: string,
+  normalize: (html: string) => string,
+  skipLeadingEmpty = false,
+): number {
+  if (!target) return -1;
+  for (let i = 0; i < currentHtml.length; i++) {
+    // Normalizing only removes characters, so once the remaining suffix is
+    // shorter than the normalized quote it can never match — stop early.
+    if (currentHtml.length - i < target.length) break;
+    if (currentHtml[i] !== "<") continue;
+    const suffix = currentHtml.slice(i);
+    if (skipLeadingEmpty && LEADING_EMPTY_BLOCK.test(normalizeForMatch(suffix))) {
+      continue;
+    }
+    if (normalize(suffix) === target) return i;
+  }
+  return -1;
+}
+
+/**
+ * Find the index in `currentHtml` at which the quoted history begins, tolerant
+ * of whitespace and empty-paragraph drift in how the editor re-serialized that
+ * quote. Returns -1 when the quoted region can't be confidently located (e.g. it
+ * was edited, not just reformatted), so the caller can fall back to appending.
+ *
+ * Three passes, cheapest first; compose bodies are small so this is a handful of
+ * comparisons:
+ *  1. exact suffix — the common, no-drift case, kept byte-exact;
+ *  2. whitespace-only drift — earliest boundary matching the whitespace-collapsed
+ *     quote;
+ *  3. empty-paragraph drift — earliest non-empty-leading boundary matching the
+ *     quote once empty paragraphs are also treated as insignificant, so a blank
+ *     line added to / removed from the middle of the quote still resolves.
  */
 function findQuotedStart(currentHtml: string, quotedHtml: string): number {
   if (!quotedHtml) return -1;
@@ -70,16 +128,18 @@ function findQuotedStart(currentHtml: string, quotedHtml: string): number {
   if (currentHtml.endsWith(quotedHtml)) {
     return currentHtml.length - quotedHtml.length;
   }
-  const target = normalizeForMatch(quotedHtml);
-  if (!target) return -1;
-  for (let i = 0; i < currentHtml.length; i++) {
-    // Normalizing only removes characters, so once the remaining suffix is
-    // shorter than the normalized quote it can never match — stop early.
-    if (currentHtml.length - i < target.length) break;
-    if (currentHtml[i] !== "<") continue;
-    if (normalizeForMatch(currentHtml.slice(i)) === target) return i;
-  }
-  return -1;
+  const ws = scanQuoteBoundary(
+    currentHtml,
+    normalizeForMatch(quotedHtml),
+    normalizeForMatch,
+  );
+  if (ws >= 0) return ws;
+  return scanQuoteBoundary(
+    currentHtml,
+    normalizeForMatchLoose(quotedHtml),
+    normalizeForMatchLoose,
+    true,
+  );
 }
 
 /**
@@ -94,8 +154,9 @@ function findQuotedStart(currentHtml: string, quotedHtml: string): number {
  * - Otherwise the new signature is inserted just above the quoted history (or
  *   appended for a fresh message). The quoted region is located tolerantly, so
  *   the signature still lands above the quote even if the editor reformatted
- *   that quote's whitespace since it was first inserted. If there is no previous
- *   signature to find and nothing new to insert, the body is returned unchanged.
+ *   that quote's whitespace — or added/removed an empty paragraph inside it —
+ *   since it was first inserted. If there is no previous signature to find and
+ *   nothing new to insert, the body is returned unchanged.
  */
 export function swapSignature(
   currentHtml: string,

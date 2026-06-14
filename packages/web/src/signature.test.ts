@@ -173,4 +173,94 @@ describe("swapSignature", () => {
       expect(out).toBe(`${COMPOSE_LEAD}<p>totally different history</p><p>sig</p>`);
     });
   });
+
+  // MAIL-12: whitespace tolerance (MAIL-11) does not treat empty paragraphs as
+  // insignificant, so a blank line added to / removed from the *middle* of the
+  // quote would otherwise defeat the match and push the signature below it. The
+  // signature must still land above the (verbatim) quote, and the leftmost-match
+  // scan must not place it too high by swallowing leading empty paragraphs.
+  describe("tolerates empty-paragraph drift inside the quoted region", () => {
+    it("inserts above a quote that gained an empty paragraph mid-way", () => {
+      const tracked = "<p>line1</p><p>line2</p>";
+      // The editor inserted a blank line between the two quoted paragraphs.
+      const drifted = "<p>line1</p><p></p><p>line2</p>";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("inserts above a quote that lost an empty paragraph mid-way", () => {
+      const tracked = "<p>line1</p><p></p><p>line2</p>";
+      // The editor collapsed the blank line between the quoted paragraphs.
+      const drifted = "<p>line1</p><p>line2</p>";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("treats <p><br></p> as an empty paragraph for matching", () => {
+      const tracked = "<p>line1</p><p>line2</p>";
+      // Some editors render an empty paragraph as <p><br></p>.
+      const drifted = "<p>line1</p><p><br></p><p>line2</p>";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("handles empty-paragraph and whitespace drift together", () => {
+      const tracked = "<p>line1</p><p>line2</p>";
+      // A mid-quote blank line AND re-spacing of the surviving paragraphs.
+      const drifted = "<p>line1 </p>\n<p></p><p> line2</p>";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("preserves the drifted quote verbatim — empty paras are matched, not rewritten", () => {
+      const tracked = "<p>a</p><p>b</p>";
+      const drifted = "<p>a</p>\n<p></p>\n<p>b</p>\n";
+      const body = `${COMPOSE_LEAD}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      // The output still contains the empty paragraph and the stray newlines.
+      expect(out).toBe(`${COMPOSE_LEAD}<p>sig</p>${drifted}`);
+    });
+
+    it("does not place the signature above leading empty paragraphs of the head", () => {
+      // Guard against the false-early boundary: collapsing empty paragraphs must
+      // not let the scan match at index 0 (which would put the signature above
+      // the compose lead-in). It lands above the first real quoted line, leaving
+      // the head's empty paragraph(s) in place.
+      const tracked = "<p>line1</p><p>line2</p>";
+      const body = `${COMPOSE_LEAD}<p>line1</p><p></p><p>line2</p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(
+        `${COMPOSE_LEAD}<p>sig</p><p>line1</p><p></p><p>line2</p>`,
+      );
+      // The compose lead-in is still the very first block, above the signature.
+      expect(out.startsWith(`${COMPOSE_LEAD}<p>sig</p>`)).toBe(true);
+    });
+
+    it("keeps typed text and a boundary blank line above the swapped signature", () => {
+      // Head = typed text + a blank line at the typed/quote boundary; quote then
+      // gains a mid-quote blank line. Signature lands above the first real quoted
+      // line, below everything the user typed.
+      const tracked = "<p>line1</p><p>line2</p>";
+      const head = "<p>hi there</p><p></p>";
+      const drifted = "<p>line1</p><p></p><p>line2</p>";
+      const body = `${head}${drifted}`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(`${head}<p>sig</p>${drifted}`);
+    });
+
+    it("still appends when the quote was genuinely replaced despite empty-para tolerance", () => {
+      // Empty-paragraph tolerance must not turn a genuinely-replaced quote into a
+      // false match — the safe append fallback still applies.
+      const tracked = "<p>line1</p><p>line2</p>";
+      const body = `${COMPOSE_LEAD}<p>different</p><p></p><p>history</p>`;
+      const out = swapSignature(body, "", "<p>sig</p>", tracked);
+      expect(out).toBe(
+        `${COMPOSE_LEAD}<p>different</p><p></p><p>history</p><p>sig</p>`,
+      );
+    });
+  });
 });
