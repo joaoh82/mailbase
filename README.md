@@ -58,9 +58,10 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   metadata in D1, threads the message, and indexes it for search.
 - **Read in a webmail.** Three-pane inbox with folders (Inbox / Archive / Sent / Spam /
   Trash), a virtualized message list, threaded conversations, read/unread, star, and
-  archive/trash. Full-text search via SQLite FTS5. HTML mail renders in a **sandboxed
-  iframe with remote images blocked by default**; attachments download through signed,
-  expiring URLs.
+  archive/trash. A one-click **Refresh** (or the `r` shortcut) pulls in new mail in place,
+  without a full page reload. Full-text search via SQLite FTS5. HTML mail renders in a
+  **sandboxed iframe with remote images blocked by default**; attachments download through
+  signed, expiring URLs.
 - **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
   headings, links) that sends real HTML email with a plaintext fallback, plus reply /
   reply-all / forward with quoting, and attachments. **Signatures** are auto-appended to

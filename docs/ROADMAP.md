@@ -72,7 +72,9 @@ truth) leaves room for these — see
   phone apps work without re-architecting.
 - **⬜ Cloudflare Email Service for outbound** — drop Resend for an all-Cloudflare stack
   once it's generally available.
-- **⬜ Push / real-time inbox** — live updates via Durable Objects or polling.
+- **⬜ Push / real-time inbox** — live updates via Durable Objects or polling. A manual
+  **Refresh** button in the message list already ships as the low-risk baseline; this layers
+  live updates on top.
 - **⬜ End-to-end encryption and on-device LLM features.**
 
 ---
