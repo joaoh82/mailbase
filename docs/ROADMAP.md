@@ -12,8 +12,9 @@ are tracked in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ### ✅ Phase 0 — Foundations
 npm-workspaces monorepo, Wrangler config per worker, the full D1 schema + first migration,
-the R2 bucket, and CI (GitHub Actions) that typechecks, tests, and deploys all three
-workers on push to `main`.
+the R2 bucket, and CI (GitHub Actions) that builds, typechecks, and tests on Linux + macOS,
+and deploys all three workers on push to `main`. The toolchain is pinned (Node 24 / npm 11
+via `.nvmrc` + `engines`), and `npm ci` installs reproducibly from the committed lockfile.
 
 ### ✅ Phase 1 — Inbound pipeline
 The Email Worker: parse with `postal-mime` → resolve the envelope recipient to a mailbox →

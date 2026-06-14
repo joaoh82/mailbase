@@ -12,8 +12,8 @@ MAILBOX ?= josh
 help: ## List available targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
-install: ## Install all workspace dependencies
-	npm install
+install: ## Install all workspace dependencies from the lockfile (clean, reproducible)
+	npm ci
 
 dev: ## Run the API worker locally (Miniflare D1/R2 bindings)
 	npm run dev -w packages/api

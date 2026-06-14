@@ -126,16 +126,17 @@ pointing a domain, deploying, and wiring up CI — lives in
 
 You'll need: a [Cloudflare account](https://dash.cloudflare.com/sign-up) (the **Workers
 Paid plan, $5/mo, is required from Phase 2** — argon2id login exceeds the free plan's
-10ms CPU limit), [Node.js](https://nodejs.org/) 22+ (an `.nvmrc` pins Node 24 — run
-`nvm use` to match), a domain you control for receiving mail, and a
+10ms CPU limit), [Node.js](https://nodejs.org/) 22+ **with npm 11+** (an `.nvmrc` pins
+Node 24, which ships npm 11 — run `nvm use` to match; the install refuses older npm,
+which corrupts the lockfile), a domain you control for receiving mail, and a
 [Resend](https://resend.com) account for sending.
 
 The short version:
 
 ```sh
 git clone https://github.com/joaoh82/mailbase && cd mailbase
-nvm use               # match the pinned Node 24 (.nvmrc)
-make install          # npm install across workspaces
+nvm use               # match the pinned Node 24 / npm 11 (.nvmrc)
+make install          # npm ci — clean install from the lockfile
 npx wrangler login
 make setup            # creates the D1 database + R2 bucket (one-time)
 # paste your database_id into the three wrangler.jsonc files (see guide)
@@ -150,7 +151,7 @@ covered in the guide.
 
 | Command              | What it does                                            |
 | -------------------- | ------------------------------------------------------- |
-| `make install`       | Install all workspace dependencies                      |
+| `make install`       | Clean install from the lockfile (`npm ci`)              |
 | `make dev`           | Run the API worker locally (Miniflare D1/R2 bindings)   |
 | `make dev-web`       | Run the web SPA dev server (Vite, port 5173)            |
 | `make test`          | Vitest across all workspaces (Workers runtime via Miniflare) |
@@ -177,7 +178,12 @@ the bar is **boring, readable, well-tested code over clever abstractions**.
 - Read [docs/DESIGN.md](docs/DESIGN.md) before non-trivial work — it's the source of truth
   for architecture and the data model. If a change contradicts it, update DESIGN.md in the
   same PR.
-- `make typecheck` and `make test` must pass before a PR; CI enforces both.
+- Use the pinned toolchain (`nvm use` → Node 24 / npm 11). `make install` runs `npm ci`,
+  so it never touches the lockfile. Only `npm install <pkg>` should change
+  `package-lock.json` — see
+  [docs/SELF_HOSTING.md → Updating dependencies](docs/SELF_HOSTING.md#updating-dependencies).
+- `make typecheck` and `make test` must pass before a PR; CI builds, typechecks, and tests
+  on both Linux and macOS.
 - Keep small, per-feature commits with imperative subject lines.
 
 See [CLAUDE.md](CLAUDE.md) for the full conventions.

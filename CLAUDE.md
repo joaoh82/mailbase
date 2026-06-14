@@ -32,7 +32,14 @@ docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
 
 ## Commands
 
-- `npm install` at root (npm workspaces).
+- Toolchain is pinned to Node 24 / npm 11 (`.nvmrc` + `engines` + `engine-strict`); run
+  `nvm use` first. Installs refuse to run under npm 10 / Node 20 (they prune cross-platform
+  optional deps from `package-lock.json`).
+- `npm ci` at root to install (npm workspaces) — reproducible, never rewrites the lockfile.
+  Only `npm install <pkg>` should change it; if the diff only *removes* optional
+  `@emnapi/*` / `@floating-ui/*` / `@rolldown/binding-*` peers for other platforms, that's
+  spurious pruning — `git checkout package-lock.json` (see `docs/SELF_HOSTING.md` →
+  "Updating dependencies").
 - `npm run dev` — local dev via `wrangler dev` (Miniflare bindings for D1/R2).
 - `npm test` — Vitest across workspaces. Run before claiming any task done.
   - One workspace: `npm test -w packages/api`. One file/pattern: `npm test -w packages/api -- run path/to.test.ts`
