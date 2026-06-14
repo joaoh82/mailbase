@@ -21,8 +21,11 @@ Cloudflare account.
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up). The free tier is enough
   to start (Phases 0–1), but the **Workers Paid plan ($5/mo) is required from Phase 2
   onward** — see the login note below.
-- [Node.js](https://nodejs.org/) 22+ and npm. An `.nvmrc` pins Node 24 (which ships
-  npm 11); run `nvm use` to match it.
+- [Node.js](https://nodejs.org/) 22+ **and npm 11+**. An `.nvmrc` pins Node 24 (which
+  ships npm 11); run `nvm use` to match it. The repo enforces this (`engines` +
+  `engine-strict`), so installs refuse to run under npm 10 / Node 20 — older npm silently
+  prunes platform-specific deps from the lockfile (see
+  [Updating dependencies](#updating-dependencies)).
 - `make` (optional but recommended; every `make` target prints the underlying command,
   so you can always run the raw `npx wrangler …` equivalent yourself)
 - A domain you control, for receiving mail (needed from Phase 1 onward)
@@ -46,8 +49,14 @@ Paid plan adds $5/mo and is required from Phase 2 (above). See
 ```sh
 git clone https://github.com/joaoh82/mailbase
 cd mailbase
-make install
+nvm use        # match the pinned Node 24 / npm 11 (.nvmrc)
+make install   # runs `npm ci` — a clean, reproducible install from the lockfile
 ```
+
+`make install` deliberately runs `npm ci` (not `npm install`): it installs exactly what
+the committed `package-lock.json` specifies and never rewrites it, so a fresh clone or a
+`git pull` is always one command with no lockfile churn. To add or upgrade a dependency,
+see [Updating dependencies](#updating-dependencies).
 
 ## 2. Authenticate wrangler
 
@@ -131,8 +140,9 @@ keeps the session cookie first-party.
 ## 8. Continuous deployment (optional)
 
 If you host your fork on GitHub, the included workflow
-(`.github/workflows/ci.yml`) typechecks and tests every push/PR, and on push to
-`main` applies migrations and deploys all three workers.
+(`.github/workflows/ci.yml`) builds, typechecks, and tests every push/PR on both
+Linux and macOS (so a lockfile missing one platform's native deps fails CI, not your
+clone), and on push to `main` applies migrations and deploys all three workers.
 
 It needs two repository secrets (**Settings → Secrets and variables → Actions**):
 
@@ -397,6 +407,37 @@ production use `wrangler secret put`. The API worker uses these secrets (see
 provisioning, `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (optional — unset runs the
 Domains panel in simulation, provisioning nothing). Locally you'll usually leave the
 Cloudflare/Resend secrets unset and let the admin UI simulate.
+
+## Updating dependencies
+
+Routine setup never edits `package-lock.json`: `make install` (`npm ci`) installs strictly
+from the committed lockfile. **Only deliberately adding or upgrading a package should change
+it.** When you do:
+
+```sh
+nvm use                       # Node 24 / npm 11 — required (see Prerequisites)
+npm install <pkg>             # or `npm install` after editing a package.json by hand
+git diff package-lock.json    # review what changed before committing
+```
+
+mailbase is developed on both macOS and Windows, and CI runs on Linux, so the lockfile must
+carry **every** platform's optional native deps (e.g. `@rolldown/binding-darwin-arm64`,
+`@rolldown/binding-linux-x64-gnu`, `@rolldown/binding-win32-x64-msvc`, and their
+`@emnapi/*` / `@floating-ui/*` peers). `npm install` resolves for *your* platform and can
+prune the others out of the lockfile — committing that breaks `npm ci` on the other OSes.
+
+So after `npm install`, check the diff: if the only change is **removed** optional
+`@emnapi/*`, `@floating-ui/*`, or `@rolldown/binding-*` entries for platforms other than
+yours, that's spurious pruning — revert it:
+
+```sh
+git checkout package-lock.json   # then re-run only the line that adds the package you wanted
+```
+
+The Linux+macOS CI matrix is the backstop: a lockfile that drops a platform's native dep
+fails `npm ci`/`npm run build` on that platform in CI rather than in someone's clone. Using
+npm 11+ (the `engines` check enforces it) keeps this pruning to the handful of optional
+peers above instead of the wider corruption npm 10 produces.
 
 ## Coming in later phases
 

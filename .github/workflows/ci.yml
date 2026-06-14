@@ -7,14 +7,23 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Run on Linux and macOS so a lockfile that is missing one platform's
+    # optional native deps (e.g. @rolldown/binding-*) fails here instead of in
+    # a contributor's clone. `npm ci` installs strictly from the committed
+    # lockfile and never rewrites it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npm run typecheck
       - run: npm test
 
@@ -29,7 +38,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - name: Apply D1 migrations
