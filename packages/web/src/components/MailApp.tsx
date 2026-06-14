@@ -17,6 +17,7 @@ import {
   type User,
 } from "../api";
 import { isAuthError } from "../App";
+import { isMessagePresent } from "../lib/messages";
 import { AdminPanel } from "./AdminPanel";
 import type { ComposeInitial } from "./ComposeModal";
 import { MessageList } from "./MessageList";
@@ -134,23 +135,34 @@ export function MailApp({
 
   useEffect(refreshIdentities, [refreshIdentities]);
 
+  // Fetch page one for the active view (mailbox + folder, or a search). Shared
+  // by the initial-load effect and the manual refresh so the two can't drift;
+  // returns null when there's no mailbox selected yet.
+  const loadFirstPage = useCallback(():
+    | Promise<{ messages: MessageListItem[]; nextCursor: string | null }>
+    | null => {
+    if (!mailboxId) return null;
+    if (isAll) return listAllMessages(folder);
+    if (activeQuery)
+      return searchMessages(mailboxId, activeQuery).then((r) => ({
+        messages: r.messages,
+        nextCursor: null as string | null,
+      }));
+    return listMessages(mailboxId, folder);
+  }, [mailboxId, isAll, folder, activeQuery]);
+
   // (Re)load page one whenever mailbox, folder, active search, or a send change.
+  // This clears the list and selection first (the view is changing under us);
+  // the manual refresh path below instead replaces items in place.
   useEffect(() => {
-    if (!mailboxId) return;
+    const load = loadFirstPage();
+    if (!load) return;
     const seq = ++loadSeq.current;
     setLoadingList(true);
     setItems([]);
     setNextCursor(null);
     setSelection(null);
     setError(null);
-    const load = isAll
-      ? listAllMessages(folder)
-      : activeQuery
-        ? searchMessages(mailboxId, activeQuery).then((r) => ({
-            messages: r.messages,
-            nextCursor: null as string | null,
-          }))
-        : listMessages(mailboxId, folder);
     load
       .then((page) => {
         if (seq !== loadSeq.current) return;
@@ -161,7 +173,58 @@ export function MailApp({
       .finally(() => {
         if (seq === loadSeq.current) setLoadingList(false);
       });
-  }, [mailboxId, isAll, folder, activeQuery, reloadNonce, fail]);
+  }, [loadFirstPage, reloadNonce, fail]);
+
+  // Manual refresh: re-fetch the current view from the top and replace the list
+  // in place — no full page reload. Unlike the effect above we keep the open
+  // message selected if it survived the reload, and don't blank the list while
+  // the refetch is in flight (so scroll position holds). Bumping loadSeq means a
+  // slow in-flight load/loadMore can't clobber the fresh result, and the
+  // loadingList guard keeps the button from double-firing.
+  const refreshList = useCallback(() => {
+    const load = loadFirstPage();
+    if (!load || loadingList) return;
+    const seq = ++loadSeq.current;
+    setLoadingList(true);
+    setError(null);
+    load
+      .then((page) => {
+        if (seq !== loadSeq.current) return;
+        setItems(page.messages);
+        setNextCursor(page.nextCursor);
+        setSelection((sel) =>
+          isMessagePresent(page.messages, sel?.messageId) ? sel : null,
+        );
+      })
+      .catch(fail)
+      .finally(() => {
+        if (seq === loadSeq.current) setLoadingList(false);
+      });
+    // Keep unread counts / folder badges in step with the refreshed list.
+    refreshMailboxes();
+  }, [loadFirstPage, loadingList, refreshMailboxes, fail]);
+
+  // Press "r" to refresh — but never while typing (search box, composer) or
+  // with a modal open, and not when a modifier is held (Cmd+R = reload).
+  const anyModalOpen = Boolean(compose || managing || adminOpen || settingsOpen);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "r" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (anyModalOpen) return;
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.isContentEditable ||
+          el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA")
+      )
+        return;
+      e.preventDefault();
+      refreshList();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [anyModalOpen, refreshList]);
 
   const loadMore = useCallback(() => {
     if (!mailboxId || !nextCursor || loadingList || activeQuery) return;
@@ -376,6 +439,7 @@ export function MailApp({
         error={error}
         allInboxes={isAll}
         onSearch={setActiveQuery}
+        onRefresh={refreshList}
         onLoadMore={loadMore}
         onSelect={handleSelect}
         onToggleStar={handleToggleStar}

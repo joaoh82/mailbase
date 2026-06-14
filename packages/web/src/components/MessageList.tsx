@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Paperclip, Search, Star, X } from "lucide-react";
+import { Paperclip, RefreshCw, Search, Star, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Folder, Mailbox, MessageListItem } from "../api";
 import { cn } from "../lib/utils";
@@ -34,6 +34,7 @@ export function MessageList({
   error,
   allInboxes = false,
   onSearch,
+  onRefresh,
   onLoadMore,
   onSelect,
   onToggleStar,
@@ -50,6 +51,7 @@ export function MessageList({
   // hidden and each row is tagged with the mailbox it landed in.
   allInboxes?: boolean;
   onSearch: (q: string) => void;
+  onRefresh: () => void;
   onLoadMore: () => void;
   onSelect: (item: MessageListItem) => void;
   onToggleStar: (item: MessageListItem) => void;
@@ -105,18 +107,30 @@ export function MessageList({
             )}
           </form>
         )}
-        <p
+        <div
           className={cn(
-            "px-1 text-xs font-medium uppercase tracking-wide text-slate-500",
+            "flex items-center justify-between gap-2",
             !allInboxes && "mt-2",
           )}
         >
-          {allInboxes
-            ? `All inboxes — ${folder}`
-            : activeQuery
-              ? `Results for “${activeQuery}”`
-              : `${folder} — ${mailbox?.address ?? ""}`}
-        </p>
+          <p className="min-w-0 truncate px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            {allInboxes
+              ? `All inboxes — ${folder}`
+              : activeQuery
+                ? `Results for “${activeQuery}”`
+                : `${folder} — ${mailbox?.address ?? ""}`}
+          </p>
+          <button
+            type="button"
+            aria-label="Refresh"
+            title="Refresh (r)"
+            disabled={loading}
+            onClick={onRefresh}
+            className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </button>
+        </div>
       </header>
 
       {error && (
