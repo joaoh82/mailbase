@@ -2,15 +2,25 @@
 # so this file doubles as documentation. See docs/SELF_HOSTING.md for the
 # full setup walkthrough.
 
-.PHONY: help install dev dev-web build test typecheck \
+.PHONY: help bootstrap doctor install dev dev-web build test typecheck \
         migrate-local migrate-remote setup seed-local seed-remote \
         user-local user-remote demo \
         deploy deploy-email deploy-api deploy-web
 
 MAILBOX ?= josh
 
+# Forward these to scripts/bootstrap.mjs as env vars, so both
+# `make bootstrap DOMAIN=foo.test` and `DOMAIN=foo.test make bootstrap` work.
+export DOMAIN MAILBOX EMAIL PASSWORD NAME
+
 help: ## List available targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
+
+bootstrap: ## Fresh clone → working local dev env in one idempotent command. Overrides: DOMAIN= MAILBOX= EMAIL= PASSWORD=
+	node scripts/bootstrap.mjs
+
+doctor: ## Preflight: check toolchain, deps, .dev.vars, local DB — prints a fix for each failure
+	node scripts/doctor.mjs
 
 install: ## Install all workspace dependencies from the lockfile (clean, reproducible)
 	npm ci
