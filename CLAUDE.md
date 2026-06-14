@@ -8,9 +8,19 @@ architecture, data model, flows, and the phased plan. If an implementation decis
 contradicts it, stop and ask rather than silently diverging. If we agree to change the
 design, update `docs/DESIGN.md` in the same PR.
 
+> **Onboarding:** `make bootstrap` (idempotent) takes a fresh clone to a working **local**
+> dev env; `make doctor` diagnoses it. Non-Claude agents read [`AGENTS.md`](AGENTS.md);
+> the durable shared rules (never-touch-`main`, the Node 24 toolchain, the human-vs-agent
+> split) are sourced from
+> [`docs/SELF_HOSTING.md` → Ground rules](docs/SELF_HOSTING.md#ground-rules-for-agents-and-humans)
+> so this file and `AGENTS.md` point at one source of truth instead of drifting.
+
 ## Stack (fixed — do not substitute)
 
-- TypeScript everywhere, `strict: true`. No JS files.
+- TypeScript everywhere, `strict: true`. No JS files — the only exceptions are the
+  dependency-free onboarding scripts `scripts/bootstrap.mjs` and `scripts/doctor.mjs`,
+  which must run on a bare clone (before `tsx` exists) and on a wrong Node (to diagnose
+  it); see the header comment in `scripts/doctor.mjs`.
 - Cloudflare Workers: Email Worker (inbound), Hono API Worker, React SPA via Workers assets.
 - Storage: R2 for raw `.eml` and attachments (source of truth), D1 via **Drizzle ORM** for
   metadata. Search via D1 FTS5.

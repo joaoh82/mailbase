@@ -11,6 +11,9 @@
     "npm": ">=11"
   },
   "scripts": {
+    "setup": "node scripts/bootstrap.mjs",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "doctor": "node scripts/doctor.mjs",
     "dev": "npm run dev -w packages/api",
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",

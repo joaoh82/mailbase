@@ -152,6 +152,8 @@ covered in the guide.
 
 | Command              | What it does                                            |
 | -------------------- | ------------------------------------------------------- |
+| `make bootstrap`     | Fresh clone → working local dev env in one idempotent command (`npm run setup`) |
+| `make doctor`        | Preflight: check toolchain, deps, `.dev.vars`, local DB — print a fix for each failure |
 | `make install`       | Clean install from the lockfile (`npm ci`)              |
 | `make dev`           | Run the API worker locally (Miniflare D1/R2 bindings)   |
 | `make dev-web`       | Run the web SPA dev server (Vite, port 5173)            |
@@ -164,11 +166,16 @@ covered in the guide.
 
 Run `make help` to list every target with its underlying command.
 
+**Fastest start (humans and AI agents):** `make bootstrap` (or `npm run setup`) takes a
+fresh clone to a working local dev env in one idempotent command — install, `.dev.vars`
+with a generated key, migrate, seed, and a dev login — then prints the start commands and
+the credentials it created. AI agents should start from **[AGENTS.md](AGENTS.md)** (the
+cross-agent entrypoint); Claude Code uses [CLAUDE.md](CLAUDE.md).
+
 For local webmail: run `make dev` (API on :8787) and `make dev-web` (Vite on :5173)
 side by side — Vite proxies `/api` to the API worker, mirroring production where the
-web worker forwards `/api/*` to `mailbase-api` over a service binding. Copy
-`packages/api/.dev.vars.example` to `packages/api/.dev.vars` first (attachment URL
-signing key). The full local-dev loop (migrate, seed, create a user) is in
+web worker forwards `/api/*` to `mailbase-api` over a service binding. The full local-dev
+loop (migrate, seed, create a user) is in
 [docs/SELF_HOSTING.md → Local development](docs/SELF_HOSTING.md#local-development).
 
 ## Contributing

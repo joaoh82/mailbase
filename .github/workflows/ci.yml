@@ -23,6 +23,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Guard the agent-onboarding path against silent rot: toolchain, deps, and the
+      # files/targets `make bootstrap` relies on. Skips dev-local state (.dev.vars, D1).
+      - run: node scripts/doctor.mjs --ci
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
