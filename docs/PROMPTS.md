@@ -4,6 +4,11 @@ Run Claude Code from the repo root. Feed one prompt per session (or `/clear` bet
 phases). Don't skip the verification step at the end of each phase. Manual steps you must
 do yourself are marked **[YOU]**.
 
+> The **[YOU]** convention is shared with [AGENTS.md](../AGENTS.md) and
+> [SELF_HOSTING.md → Ground rules](SELF_HOSTING.md#ground-rules-for-agents-and-humans),
+> which spell out the full human-vs-agent split. For local setup an agent doesn't need
+> these prompts at all — `make bootstrap` handles it end to end.
+
 ---
 
 ## Phase 0 — Foundations

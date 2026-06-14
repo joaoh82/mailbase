@@ -16,6 +16,67 @@ Cloudflare account.
 > Routing, catch-all rule, and Resend DKIM/SPF records are all created via API, with a
 > domain switcher and unified "all inboxes" view in the UI (step 16).
 
+## Quickstart (agents & humans): one-command local setup
+
+To get a **local** dev environment running without walking the full guide below, from a
+fresh clone:
+
+```sh
+nvm use            # match the pinned Node 24 / npm 11 (.nvmrc)
+make bootstrap     # or: npm run setup
+```
+
+`make bootstrap` is idempotent and does everything local: install deps, create
+`packages/api/.dev.vars` (with a generated `SIGNING_KEY`), migrate + seed the local D1
+database, and create a dev login — then it prints the start commands (`make dev` +
+`make dev-web`), the login it created, and the human-only steps it won't attempt. If a
+setup looks broken, `make doctor` checks the toolchain and dev state and prints a fix for
+each problem. **No Cloudflare or Resend account is needed for local dev.**
+
+This is the fast path for AI agents too — see **[AGENTS.md](../AGENTS.md)** (the
+cross-agent entrypoint) and the Ground rules below. The rest of this document is the full,
+manual, production walkthrough.
+
+## Ground rules (for agents and humans)
+
+The durable rules every contributor — human or AI agent — follows. Both
+[AGENTS.md](../AGENTS.md) and [CLAUDE.md](../CLAUDE.md) link here so there is one source
+of truth instead of three copies that drift.
+
+- **Never commit to `main`.** Branch or use a git worktree, created from an up-to-date
+  `main`. (Claude Code's stricter phrasing lives in [CLAUDE.md](../CLAUDE.md).)
+- **Use the pinned toolchain — Node 24 / npm 11** (`nvm use`). Older npm corrupts the
+  lockfile (see [Updating dependencies](#updating-dependencies)); the repo enforces it via
+  `engines` + `engine-strict`, and `make doctor` flags a wrong version with the fix.
+- **Read [DESIGN.md](DESIGN.md) before non-trivial work** — it is the source of truth for
+  architecture and the data model. Update it in the same PR if a change diverges.
+- **Keep docs current in the same PR** as code that changes behavior, setup, commands, or
+  architecture.
+- **One command sets up local dev** (`make bootstrap`, above). **Stop at human-gated
+  steps** — list them and pause rather than faking them.
+
+### Human vs agent — what's automatable, where to stop
+
+Marked with the `[YOU]` convention from [PROMPTS.md](PROMPTS.md).
+
+**An agent can do autonomously:** install / build / typecheck / test, local
+migrate / seed / user (`make bootstrap`), run the app (`make dev` + `make dev-web`), and —
+*once a human has supplied credentials* (a non-interactive `CLOUDFLARE_API_TOKEN` +
+`CLOUDFLARE_ACCOUNT_ID` in the environment) — the remote path: `make setup` (create
+D1 + R2), `make migrate-remote`, `wrangler secret put <NAME>` from supplied values, and
+`make deploy`.
+
+**`[YOU]` (human-only — pause and list these; do not attempt them):**
+
+- `[YOU]` Create a Cloudflare account and run `npx wrangler login` (interactive OAuth).
+- `[YOU]` Enable R2 in the dashboard (one-time activation, payment method on file).
+- `[YOU]` Add your domain as a Cloudflare zone and delegate nameservers at your registrar.
+- `[YOU]` Upgrade to the Workers Paid plan ($5/mo) — argon2 login exceeds the free 10ms CPU cap.
+- `[YOU]` Create a Resend account and verify your sending domain.
+
+The philosophy mirrors the Phase-5 Domains panel: **automate via API, pause on
+nameservers.**
+
 ## Prerequisites
 
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up). The free tier is enough
@@ -382,6 +443,10 @@ domain) filters the mailbox list, and **All inboxes** shows every mailbox's mail
 list, each message tagged with where it landed.
 
 ## Local development
+
+**The fast path:** `make bootstrap` (or `npm run setup`) does the first four steps below
+in one idempotent command — install, `.dev.vars`, migrate, seed, and create a login — and
+prints the rest. `make doctor` diagnoses a broken local setup. The manual equivalent:
 
 ```sh
 cp packages/api/.dev.vars.example packages/api/.dev.vars   # local SIGNING_KEY

@@ -15,6 +15,8 @@ npm-workspaces monorepo, Wrangler config per worker, the full D1 schema + first 
 the R2 bucket, and CI (GitHub Actions) that builds, typechecks, and tests on Linux + macOS,
 and deploys all three workers on push to `main`. The toolchain is pinned (Node 24 / npm 11
 via `.nvmrc` + `engines`), and `npm ci` installs reproducibly from the committed lockfile.
+A one-command, agent-friendly onboarding path (`make bootstrap` / `make doctor`, plus an
+`AGENTS.md` entrypoint) takes a fresh clone to a working local dev env unattended.
 
 ### ✅ Phase 1 — Inbound pipeline
 The Email Worker: parse with `postal-mime` → resolve the envelope recipient to a mailbox →
