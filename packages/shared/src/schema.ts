@@ -296,5 +296,52 @@ export const attachments = sqliteTable(
   (table) => [index("idx_attachments_message").on(table.messageId)],
 );
 
+// User-defined labels (migration 0009): a flat, many-to-many tagging layer on
+// top of the folder enum (labels are additive, folders untouched). Scoped to a
+// shared mailbox — visible to and managed by every member of that mailbox, like
+// signatures/members/identities — so authorization reuses the same membership
+// checks. A label may only be applied to a message in the same mailbox.
+export const labels = sqliteTable(
+  "labels",
+  {
+    id: text("id").primaryKey(),
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .references(() => mailboxes.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // Optional UI color: '' (default chip styling) or a "#rrggbb" hex value.
+    color: text("color").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    uniqueIndex("labels_mailbox_id_name_unique").on(
+      table.mailboxId,
+      table.name,
+    ),
+    index("idx_labels_mailbox").on(table.mailboxId),
+  ],
+);
+
+// Join table for the message ↔ label many-to-many. Rows cascade-delete when
+// either the message or the label is deleted.
+export const messageLabels = sqliteTable(
+  "message_labels",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    labelId: text("label_id")
+      .notNull()
+      .references(() => labels.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.labelId] }),
+    // "messages with label X"; the reverse ("labels on message Y") is the PK.
+    index("idx_message_labels_label").on(table.labelId),
+  ],
+);
+
 // messages_fts is an FTS5 virtual table (plus sync triggers) that Drizzle
 // cannot model. It exists only in the SQL migration; query it with raw SQL.
