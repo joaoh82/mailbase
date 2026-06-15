@@ -1,17 +1,23 @@
 import { useState } from "react";
 import { ApiError, type Identity, updateIdentitySignature } from "../api";
+import { POLL_INTERVAL_OPTIONS, writePollIntervalMs } from "../lib/preferences";
 import { RichTextEditor } from "./RichTextEditor";
 import { Button } from "./ui/button";
 
-// Per-user settings: edit the signature on each of your send-as identities
-// (MAIL-4). A signature is appended to the bottom of outgoing mail sent from
-// that address; leave it empty to fall back to the mailbox's default signature.
+// Per-user settings: the live-update cadence (MAIL-14, saved per-browser) and
+// the signature on each of your send-as identities (MAIL-4). A signature is
+// appended to the bottom of outgoing mail sent from that address; leave it
+// empty to fall back to the mailbox's default signature.
 export function SettingsModal({
   identities,
+  pollIntervalMs,
+  onPollIntervalChange,
   onClose,
   onSaved,
 }: {
   identities: Identity[];
+  pollIntervalMs: number;
+  onPollIntervalChange: (ms: number) => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -57,6 +63,37 @@ export function SettingsModal({
         className="w-full max-w-lg space-y-5 rounded-xl border border-slate-800 bg-slate-900 p-6"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="space-y-2">
+          <div>
+            <h2 className="text-lg font-semibold">Live updates</h2>
+            <p className="text-sm text-slate-400">
+              How often the inbox checks for new mail on its own — it also
+              refreshes the moment you return to the tab. Applies to this browser;
+              choose “Off” to rely on the manual Refresh (the “r” shortcut) only.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Check for new mail</span>
+            <select
+              className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
+              value={pollIntervalMs}
+              onChange={(e) => {
+                const ms = Number(e.target.value);
+                writePollIntervalMs(ms);
+                onPollIntervalChange(ms);
+              }}
+            >
+              {POLL_INTERVAL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="border-t border-slate-800" />
+
         <div>
           <h2 className="text-lg font-semibold">Signature</h2>
           <p className="text-sm text-slate-400">

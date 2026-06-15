@@ -75,8 +75,9 @@ truth) leaves room for these — see
 - **⬜ Cloudflare Email Service for outbound** — drop Resend for an all-Cloudflare stack
   once it's generally available.
 - **🚧 Push / real-time inbox** — **polling live-updates ship today** (MAIL-14): the webmail
-  refetches in place when a cheap per-mailbox "changes" probe moves, on a ~45s interval and on
-  tab focus, with the manual **Refresh** (`r`) as the fallback. The remaining increment is
+  refetches in place when a cheap per-mailbox "changes" probe moves, on a configurable interval
+  (default ~30s, set in Settings) and on tab focus, with the manual **Refresh** (`r`) as the
+  fallback. The remaining increment is
   **Durable Objects + Hibernatable WebSockets** for sub-second push, reusing the same refetch
   path.
 - **⬜ End-to-end encryption and on-device LLM features.**
