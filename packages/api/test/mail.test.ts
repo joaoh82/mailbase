@@ -111,6 +111,63 @@ describe("mailboxes", () => {
   });
 });
 
+describe("live changes (poll)", () => {
+  type Change = { id: string; latestAt: number | null; unread: number };
+  const changes = async () =>
+    ((await (await get("/api/mailboxes/changes")).json()) as {
+      mailboxes: Change[];
+    }).mailboxes;
+
+  it("returns one row per member mailbox, scoped to membership", async () => {
+    const res = await get("/api/mailboxes/changes");
+    expect(res.status).toBe(200);
+    const mailboxes = await changes();
+    // Only josh's mailbox — mbx-other belongs to another user and must not leak.
+    expect(mailboxes).toHaveLength(1);
+    const josh = mailboxes[0]!;
+    expect(josh.id).toBe("mbx-josh");
+    expect(josh.unread).toBe(7); // matches the sidebar badge
+    expect(typeof josh.latestAt).toBe("number");
+  });
+
+  it("moves the signal when new mail arrives and when it is read", async () => {
+    const baseline = (await changes())[0]!;
+
+    // A newly-committed inbound message bumps both unread and latestAt.
+    const newCreatedAt = new Date((baseline.latestAt ?? 0) * 1000 + 60_000);
+    await db.insert(messages).values({
+      id: "msg-live",
+      mailboxId: "mbx-josh",
+      r2Key: "testdomain.com/mbx-josh/msg-live.eml",
+      direction: "inbound",
+      fromAddr: "sender@remote.example",
+      toAddrs: ["josh@testdomain.com"],
+      subject: "Live one",
+      bodyText: "live body",
+      folder: "inbox",
+      date: new Date(9000_000),
+      createdAt: newCreatedAt,
+      messageIdHeader: "msg-live@remote.example",
+    });
+
+    const afterArrival = (await changes())[0]!;
+    expect(afterArrival.unread).toBe(baseline.unread + 1);
+    expect(afterArrival.latestAt).toBe(Math.floor(newCreatedAt.getTime() / 1000));
+
+    // Reading an inbox message drops the unread count back (badge follows).
+    expect(
+      (await post("/api/messages/msg-live/read", { isRead: true })).status,
+    ).toBe(200);
+    const afterRead = (await changes())[0]!;
+    expect(afterRead.unread).toBe(baseline.unread);
+  });
+
+  it("requires a session", async () => {
+    const res = await SELF.fetch("http://webmail.local/api/mailboxes/changes");
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("messages and threads", () => {
   it("returns message detail with body text and attachment metadata", async () => {
     const res = await get("/api/messages/msg-rich");

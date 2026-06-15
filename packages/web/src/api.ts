@@ -125,6 +125,24 @@ export function listMailboxes(): Promise<{ mailboxes: Mailbox[] }> {
   return request("/api/mailboxes");
 }
 
+export interface MailboxChange {
+  id: string;
+  /** Max message created_at (epoch seconds) in the mailbox; null if empty. */
+  latestAt: number | null;
+  /** Inbox unread count, matching the sidebar badge. */
+  unread: number;
+}
+
+/**
+ * Cheap "anything changed?" probe for the live-update poll (MAIL-14): one row
+ * per mailbox the user belongs to. The client compares successive responses and
+ * only refetches the active view when the signal moves. Membership-scoped
+ * server-side.
+ */
+export function pollChanges(): Promise<{ mailboxes: MailboxChange[] }> {
+  return request("/api/mailboxes/changes");
+}
+
 export function listMessages(
   mailboxId: string,
   folder: Folder,

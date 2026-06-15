@@ -58,7 +58,9 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   metadata in D1, threads the message, and indexes it for search.
 - **Read in a webmail.** Three-pane inbox with folders (Inbox / Archive / Sent / Spam /
   Trash), a virtualized message list, threaded conversations, read/unread, star, and
-  archive/trash. A one-click **Refresh** (or the `r` shortcut) pulls in new mail in place,
+  archive/trash. The inbox **updates live** — a lightweight poll refetches in place when new
+  mail lands or the unread count changes (and on tab focus), so you rarely refresh by hand;
+  a one-click **Refresh** (or the `r` shortcut) is always there as the manual fallback,
   without a full page reload. Full-text search via SQLite FTS5. HTML mail renders in a
   **sandboxed iframe with remote images blocked by default**; attachments download through
   signed, expiring URLs.
