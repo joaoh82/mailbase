@@ -114,6 +114,8 @@ docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
 
 ## Documentation
 
+- **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — how to use the webmail day to day: read and
+  send mail, folders and labels, shared inboxes, and adding domains/addresses from the UI.
 - **[docs/DESIGN.md](docs/DESIGN.md)** — architecture, data model, core flows, and the
   detailed development plan. The source of truth; read it before non-trivial changes.
 - **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** — the full, step-by-step guide to
