@@ -19,6 +19,7 @@ import {
 } from "../api";
 import { isAuthError } from "../App";
 import { isMessagePresent } from "../lib/messages";
+import { readPollIntervalMs } from "../lib/preferences";
 import { AdminPanel } from "./AdminPanel";
 import type { ComposeInitial } from "./ComposeModal";
 import { MessageList } from "./MessageList";
@@ -54,12 +55,6 @@ export interface Selection {
 }
 
 export type ComposeKind = "reply" | "replyAll" | "forward";
-
-// How often the live-update poll (MAIL-14) checks for inbox changes while the
-// tab is visible. Long enough to stay cheap when idle; the poll also fires
-// immediately on tab focus / visibility regain, so coming back to the tab feels
-// instant regardless of where in the interval it lands.
-const POLL_INTERVAL_MS = 45_000;
 
 const reSubject = (s: string) => (/^re:/i.test(s.trim()) ? s : `Re: ${s}`);
 const fwdSubject = (s: string) =>
@@ -97,6 +92,8 @@ export function MailApp({
   const [adminOpen, setAdminOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Live-update cadence (MAIL-14), in ms; 0 = off. Per-browser, from Settings.
+  const [pollIntervalMs, setPollIntervalMs] = useState(readPollIntervalMs);
   const loadSeq = useRef(0);
 
   const isAll = mailboxId === ALL_INBOXES;
@@ -237,13 +234,16 @@ export function MailApp({
   // MAIL-13 refresh path whenever the active view's underlying data moved. This
   // is the polling baseline; the Durable Objects push path (DESIGN.md §8) can
   // layer on later and trigger the same refetch. Idle cost stays bounded — we
-  // poll only while the tab is visible, on an interval, and immediately on
-  // focus / visibility regain. The latest blocking state and refresh fn are
-  // read through a ref so the interval never has to reset on every render.
+  // poll only while the tab is visible, on the user-chosen interval, and
+  // immediately on focus / visibility regain. The latest blocking state and
+  // refresh fn are read through a ref so the interval never has to reset on
+  // every render — only when the cadence itself changes.
   const liveRef = useRef({ anyModalOpen, activeQuery, refreshList });
   liveRef.current = { anyModalOpen, activeQuery, refreshList };
   const lastSignatureRef = useRef<string | null>(null);
   useEffect(() => {
+    // "Off" (0) disables auto-updates entirely; the manual Refresh still works.
+    if (pollIntervalMs <= 0) return;
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -281,7 +281,7 @@ export function MailApp({
     const start = () => {
       if (timer !== null) return;
       poll();
-      timer = setInterval(poll, POLL_INTERVAL_MS);
+      timer = setInterval(poll, pollIntervalMs);
     };
     const stop = () => {
       if (timer !== null) {
@@ -303,7 +303,10 @@ export function MailApp({
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", poll);
     };
-  }, [onSignedOut]);
+    // Re-runs when the cadence changes: the old interval/listeners are torn down
+    // and restarted. lastSignatureRef is a ref, so the baseline survives the
+    // restart and changing the cadence never triggers a spurious refetch.
+  }, [onSignedOut, pollIntervalMs]);
 
   const loadMore = useCallback(() => {
     if (!mailboxId || !nextCursor || loadingList || activeQuery) return;
@@ -566,6 +569,8 @@ export function MailApp({
         <Suspense fallback={<ModalFallback />}>
           <SettingsModal
             identities={identities}
+            pollIntervalMs={pollIntervalMs}
+            onPollIntervalChange={setPollIntervalMs}
             onClose={() => setSettingsOpen(false)}
             onSaved={refreshIdentities}
           />

@@ -181,8 +181,10 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
 The inbox refreshes itself without a manual click (MAIL-14). The SPA polls a cheap
 `GET /api/mailboxes/changes` endpoint — one row per mailbox the user belongs to, each
 carrying `latestAt` (the max message `created_at`, epoch seconds, across every folder) and
-the inbox `unread` count — every ~45s while the tab is visible, and immediately on tab
-focus / visibility regain. The client keeps the last signal; only when it moves does it
+the inbox `unread` count — every ~30s by default while the tab is visible, and immediately
+on tab focus / visibility regain. The cadence is a per-browser preference set in Settings
+(Off / 15s / 30s / 1m / 5m, stored in `localStorage` — no migration or API; "Off" leaves
+just the manual Refresh). The client keeps the last signal; only when it moves does it
 reuse the manual **Refresh** path (MAIL-13) to refetch the active view and the folder badges
 in place. The probe is membership-scoped through the same query path as every other read, so
 a user is never notified about mailboxes they can't access. It is one small grouped query per

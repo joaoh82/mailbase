@@ -60,8 +60,9 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   Trash), a virtualized message list, threaded conversations, read/unread, star, and
   archive/trash. The inbox **updates live** — a lightweight poll refetches in place when new
   mail lands or the unread count changes (and on tab focus), so you rarely refresh by hand;
-  a one-click **Refresh** (or the `r` shortcut) is always there as the manual fallback,
-  without a full page reload. Full-text search via SQLite FTS5. HTML mail renders in a
+  the cadence is configurable in Settings (default every 30s, or off). A one-click **Refresh**
+  (or the `r` shortcut) is always there as the manual fallback, without a full page reload.
+  Full-text search via SQLite FTS5. HTML mail renders in a
   **sandboxed iframe with remote images blocked by default**; attachments download through
   signed, expiring URLs.
 - **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
