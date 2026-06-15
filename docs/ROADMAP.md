@@ -29,7 +29,9 @@ Auth (argon2id, D1-backed sessions, HttpOnly cookies, CSRF on mutations, rate-li
 login) and a three-pane React inbox: folder list, virtualized message list, threaded
 conversation view, read/unread, star, archive/trash, full-text search, signed expiring
 attachment URLs, and HTML rendered in a sandboxed iframe with remote images blocked behind
-a per-message opt-in.
+a per-message opt-in. Later added: **Gmail-style labels** (MAIL-16) — mailbox-scoped,
+optionally colored tags layered on top of folders, applied per message and filterable from
+the sidebar.
 
 ### ✅ Phase 3 — Sending
 The `MailSender` interface with a Resend adapter (the only file allowed to import Resend).

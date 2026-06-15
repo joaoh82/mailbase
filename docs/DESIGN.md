@@ -138,12 +138,21 @@ messages         (id, mailbox_id, r2_key, thread_id, direction, from_addr, to_ad
                   -- send provider's id + bounce/complaint state (Phase 3).
 attachments      (id, message_id, filename, mime_type, size, r2_key)
 threads          (id, mailbox_id, subject_norm, last_message_at, message_count)
+labels           (id, mailbox_id, name, color, created_at)         -- user-defined labels
+                  -- (MAIL-16), scoped to a shared mailbox; unique (mailbox_id, name).
+message_labels   (message_id, label_id)                            -- many-to-many join,
+                  -- composite pk (message_id, label_id); both FKs cascade-delete.
 messages_fts     (FTS5 virtual table over subject, from_addr, body_text)
 ```
 
-Folder model: a simple `folder` enum per message (`inbox`, `sent`, `archive`, `trash`, `spam`)
-plus labels later if wanted. Threading: normalize subject + `References`/`In-Reply-To` headers
-(each message's own `Message-ID` is stored in `message_id_header` so those lookups work).
+Folder model: a simple `folder` enum per message (`inbox`, `sent`, `archive`, `trash`, `spam`).
+**Labels** (MAIL-16) are an additive layer on top — a flat, many-to-many tagging system, not
+a folder replacement. A label belongs to a shared mailbox (so it's visible to and managed by
+every member, like signatures), and a label may only be applied to a message in the same
+mailbox, so labels never cross the multi-domain boundary. The inbox can be filtered to one
+label, and label chips show on rows and in the reading pane. Threading: normalize subject +
+`References`/`In-Reply-To` headers (each message's own `Message-ID` is stored in
+`message_id_header` so those lookups work).
 
 Access model (Phase 4): every mailbox/message/thread read is scoped to the caller's
 `mailbox_members` rows — nothing outside your memberships is reachable. Sending is scoped to
