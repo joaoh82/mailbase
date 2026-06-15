@@ -177,6 +177,25 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
 3. HTML email rendered in a sandboxed iframe (`sandbox`, CSP, no external loads by default,
    "load remote images" opt-in) — standard webmail XSS hygiene.
 
+### Live updates (polling)
+The inbox refreshes itself without a manual click (MAIL-14). The SPA polls a cheap
+`GET /api/mailboxes/changes` endpoint — one row per mailbox the user belongs to, each
+carrying `latestAt` (the max message `created_at`, epoch seconds, across every folder) and
+the inbox `unread` count — every ~45s while the tab is visible, and immediately on tab
+focus / visibility regain. The client keeps the last signal; only when it moves does it
+reuse the manual **Refresh** path (MAIL-13) to refetch the active view and the folder badges
+in place. The probe is membership-scoped through the same query path as every other read, so
+a user is never notified about mailboxes they can't access. It is one small grouped query per
+tick and degrades gracefully: a failed poll just retries next tick, and the manual Refresh
+(`r`) keeps working if polling is unavailable.
+
+What it catches: new mail (any folder bumps `latestAt`) and unread-badge changes. What it
+does **not** catch, by design: a star/move done in *another* session (those change neither
+`latestAt` nor the unread count) — manual Refresh covers that. The Durable-Objects WebSocket
+push in §8 is the planned next increment for sub-second latency; it would reuse this same
+refetch path, with polling as the fallback when a socket is unavailable. No new bindings or
+secrets are required for the polling baseline.
+
 ### Send
 1. SPA composes in a rich-text editor; the API validates the user owns the chosen
    identity. The composer sends an HTML body plus a plaintext fallback. A
@@ -237,7 +256,9 @@ login needs the Workers Paid plan. Hard ceiling around $5–10/mo at much higher
   R2/D1 — enables Outlook/Thunderbird/phone apps without re-architecting (VCMail's Oracle
   server pattern).
 - **Cloudflare Email Service** for outbound once GA → drop Resend, all-Cloudflare.
-- **Push/real-time:** Durable Objects or polling → live inbox updates.
+- **Push/real-time:** a **polling baseline ships today** (MAIL-14 — see §5 "Live updates");
+  Durable Objects + Hibernatable WebSockets are the planned next increment for sub-second
+  push, reusing the same refetch path with polling as the fallback.
 - **E2E encryption, on-device LLM** (the VCMail headline features) — layer on top later.
 
 ---

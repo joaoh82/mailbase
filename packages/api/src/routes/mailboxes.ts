@@ -85,6 +85,51 @@ mailboxRoutes.get("/", async (c) => {
   });
 });
 
+// Cheap "anything changed?" probe for the live-update poll (MAIL-14). Returns
+// one row per mailbox the user belongs to — each with `latestAt` (the max
+// message `created_at`, epoch seconds, across every folder) and the inbox
+// `unread` count — so the SPA can compare successive responses and only refetch
+// the active view when the signal moves. Membership-scoped like every other
+// read (multi-domain invariant): a user is never told about mailboxes they
+// can't access. One small grouped query per tick keeps idle cost bounded.
+mailboxRoutes.get("/changes", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+
+  const memberships = await db
+    .select({ id: mailboxMembers.mailboxId })
+    .from(mailboxMembers)
+    .where(eq(mailboxMembers.userId, user.id))
+    .all();
+  const ids = memberships.map((m) => m.id);
+  if (ids.length === 0) return c.json({ mailboxes: [] });
+
+  const rows = await db
+    .select({
+      mailboxId: messages.mailboxId,
+      latestAt: sql<number | null>`max(${messages.createdAt})`,
+      unread: sql<number>`sum(case when ${messages.folder} = 'inbox' and ${messages.isRead} = 0 then 1 else 0 end)`,
+    })
+    .from(messages)
+    .where(inArray(messages.mailboxId, ids))
+    .groupBy(messages.mailboxId)
+    .all();
+  const byId = new Map(rows.map((r) => [r.mailboxId, r]));
+
+  // Always emit a row per membership (even mailboxes with no mail yet) so the
+  // client's change signature is over a stable set.
+  return c.json({
+    mailboxes: ids.map((id) => {
+      const row = byId.get(id);
+      return {
+        id,
+        latestAt: row?.latestAt ?? null,
+        unread: Number(row?.unread ?? 0),
+      };
+    }),
+  });
+});
+
 // Update a mailbox's default signature (MAIL-4). Any member of the mailbox may
 // edit the shared default; the HTML is sanitized to the outbound allowlist
 // before it is stored. Reads/writes are scoped by mailbox membership, never by

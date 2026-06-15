@@ -6,6 +6,7 @@ import {
   listMessages,
   logout,
   moveMessage,
+  pollChanges,
   searchMessages,
   setRead,
   setStarred,
@@ -53,6 +54,12 @@ export interface Selection {
 }
 
 export type ComposeKind = "reply" | "replyAll" | "forward";
+
+// How often the live-update poll (MAIL-14) checks for inbox changes while the
+// tab is visible. Long enough to stay cheap when idle; the poll also fires
+// immediately on tab focus / visibility regain, so coming back to the tab feels
+// instant regardless of where in the interval it lands.
+const POLL_INTERVAL_MS = 45_000;
 
 const reSubject = (s: string) => (/^re:/i.test(s.trim()) ? s : `Re: ${s}`);
 const fwdSubject = (s: string) =>
@@ -225,6 +232,78 @@ export function MailApp({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [anyModalOpen, refreshList]);
+
+  // Live updates (MAIL-14): poll a cheap "changes since" signal and reuse the
+  // MAIL-13 refresh path whenever the active view's underlying data moved. This
+  // is the polling baseline; the Durable Objects push path (DESIGN.md §8) can
+  // layer on later and trigger the same refetch. Idle cost stays bounded — we
+  // poll only while the tab is visible, on an interval, and immediately on
+  // focus / visibility regain. The latest blocking state and refresh fn are
+  // read through a ref so the interval never has to reset on every render.
+  const liveRef = useRef({ anyModalOpen, activeQuery, refreshList });
+  liveRef.current = { anyModalOpen, activeQuery, refreshList };
+  const lastSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const poll = () => {
+      pollChanges()
+        .then(({ mailboxes }) => {
+          if (stopped) return;
+          const signature = mailboxes
+            .map((m) => `${m.id}:${m.latestAt ?? 0}:${m.unread}`)
+            .sort()
+            .join("|");
+          // The first response is just a baseline — the open view already
+          // reflects current state, so there's nothing to refetch yet.
+          if (lastSignatureRef.current === null) {
+            lastSignatureRef.current = signature;
+            return;
+          }
+          if (signature === lastSignatureRef.current) return;
+          const { anyModalOpen: blocked, activeQuery: query, refreshList: refresh } =
+            liveRef.current;
+          // Defer while a modal or an active search would be disrupted; the
+          // signature stays "dirty" so the next poll (or a manual refresh) picks
+          // the change up once we're unblocked.
+          if (blocked || query) return;
+          lastSignatureRef.current = signature;
+          refresh();
+        })
+        .catch((err) => {
+          // A dead session falls back to login like any other call; transient
+          // errors are swallowed so the loop keeps trying next tick.
+          if (isAuthError(err)) onSignedOut();
+        });
+    };
+
+    const start = () => {
+      if (timer !== null) return;
+      poll();
+      timer = setInterval(poll, POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", poll);
+    return () => {
+      stopped = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", poll);
+    };
+  }, [onSignedOut]);
 
   const loadMore = useCallback(() => {
     if (!mailboxId || !nextCursor || loadingList || activeQuery) return;
