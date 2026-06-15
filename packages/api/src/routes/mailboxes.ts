@@ -2,11 +2,13 @@ import {
   addresses,
   domains,
   identities,
+  labels,
   mailboxes,
   MAILBOX_ROLES,
   mailboxMembers,
   type MailboxRole,
   MESSAGE_FOLDERS,
+  messageLabels,
   messages,
   type MessageFolder,
   sanitizeOutboundHtml,
@@ -17,6 +19,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { hasMailboxAccess } from "../lib/access";
 import type { AppEnv } from "../lib/context";
+import { labelsByMessage } from "../lib/labels";
 import {
   canManageMailbox,
   getMailboxRole,
@@ -228,9 +231,14 @@ mailboxRoutes.get("/all/messages", async (c) => {
       ? `${Math.floor(last.date.getTime() / 1000)}.${last.id}`
       : null;
 
+  const labelsByMsg = await labelsByMessage(
+    db,
+    items.map((row) => row.message.id),
+  );
+
   return c.json({
     messages: items.map((row) => ({
-      ...messageListItem(row.message),
+      ...messageListItem(row.message, labelsByMsg.get(row.message.id) ?? []),
       mailboxId: row.message.mailboxId,
       mailboxAddress: `${row.mailboxName}@${row.domainName}`,
     })),
@@ -259,6 +267,19 @@ mailboxRoutes.get("/:mailboxId/messages", async (c) => {
     MAX_PAGE_SIZE,
   );
 
+  // Optional label filter (MAIL-16): narrow the folder to messages carrying a
+  // given label. The label must belong to this mailbox, so the filter can never
+  // reference another mailbox's label (multi-domain invariant).
+  const labelId = c.req.query("labelId");
+  if (labelId) {
+    const label = await db
+      .select({ id: labels.id })
+      .from(labels)
+      .where(and(eq(labels.id, labelId), eq(labels.mailboxId, mailboxId)))
+      .get();
+    if (!label) return c.json({ error: "Label not found" }, 404);
+  }
+
   const conditions = [
     eq(messages.mailboxId, mailboxId),
     eq(messages.folder, folder),
@@ -280,22 +301,51 @@ mailboxRoutes.get("/:mailboxId/messages", async (c) => {
     );
   }
 
-  const page = await db
-    .select()
-    .from(messages)
-    .where(and(...conditions))
-    .orderBy(desc(messages.date), desc(messages.id))
-    .limit(limit + 1)
-    .all();
+  // With a label filter, inner-join the join table so only tagged messages come
+  // back; the select shape is normalized to `{ message }` either way so the
+  // serialization below is uniform.
+  const page = labelId
+    ? await db
+        .select({ message: messages })
+        .from(messages)
+        .innerJoin(
+          messageLabels,
+          and(
+            eq(messageLabels.messageId, messages.id),
+            eq(messageLabels.labelId, labelId),
+          ),
+        )
+        .where(and(...conditions))
+        .orderBy(desc(messages.date), desc(messages.id))
+        .limit(limit + 1)
+        .all()
+    : (
+        await db
+          .select()
+          .from(messages)
+          .where(and(...conditions))
+          .orderBy(desc(messages.date), desc(messages.id))
+          .limit(limit + 1)
+          .all()
+      ).map((message) => ({ message }));
 
   const items = page.slice(0, limit);
-  const last = items[items.length - 1];
+  const last = items[items.length - 1]?.message;
   const nextCursor =
     page.length > limit && last
       ? `${Math.floor(last.date.getTime() / 1000)}.${last.id}`
       : null;
 
-  return c.json({ messages: items.map(messageListItem), nextCursor });
+  const labelsByMsg = await labelsByMessage(
+    db,
+    items.map((row) => row.message.id),
+  );
+  return c.json({
+    messages: items.map((row) =>
+      messageListItem(row.message, labelsByMsg.get(row.message.id) ?? []),
+    ),
+    nextCursor,
+  });
 });
 
 // FTS5 search across the mailbox (all folders). The query is tokenized and
@@ -342,11 +392,12 @@ mailboxRoutes.get("/:mailboxId/search", async (c) => {
     .where(inArray(messages.id, ids))
     .all();
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const labelsByMsg = await labelsByMessage(db, ids);
   return c.json({
     messages: ids
       .map((id) => byId.get(id))
       .filter((r) => r !== undefined)
-      .map(messageListItem),
+      .map((r) => messageListItem(r, labelsByMsg.get(r.id) ?? [])),
   });
 });
 

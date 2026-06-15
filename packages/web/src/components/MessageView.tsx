@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Archive,
+  Check,
   Download,
   Forward,
   Image,
@@ -10,18 +11,24 @@ import {
   Reply,
   ReplyAll,
   Star,
+  Tag,
   Trash2,
   Undo2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  applyLabel,
   fetchMessageFull,
-  mintAttachmentUrl,
   type AttachmentMeta,
+  type Label,
+  listLabels,
   type MessageDetail,
+  mintAttachmentUrl,
+  removeLabel,
 } from "../api";
 import { buildEmailSrcdoc, EMAIL_IFRAME_SANDBOX } from "../email-html";
 import { cn } from "../lib/utils";
+import { DEFAULT_LABEL_COLOR, LabelChip } from "./LabelChip";
 import type { ComposeKind } from "./MailApp";
 import { formatListDate } from "./MessageList";
 import { Button } from "./ui/button";
@@ -38,6 +45,8 @@ export function MessageView({
   onSetRead,
   onMove,
   onReply,
+  onApplyLabel,
+  onRemoveLabel,
 }: {
   message: MessageDetail;
   initiallyExpanded: boolean;
@@ -45,6 +54,9 @@ export function MessageView({
   onSetRead: (id: string, isRead: boolean) => void;
   onMove: (id: string, target: "inbox" | "archive" | "trash") => void;
   onReply: (message: MessageDetail, kind: ComposeKind) => void;
+  // Keep the list row's chips in step when labels change here (MAIL-16).
+  onApplyLabel: (messageId: string, label: Label) => void;
+  onRemoveLabel: (messageId: string, labelId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   // Local mirrors so the buttons reflect actions immediately even though the
@@ -52,6 +64,32 @@ export function MessageView({
   const [isStarred, setIsStarred] = useState(message.isStarred);
   const [isRead, setIsRead] = useState(message.isRead);
   const [folder, setFolder] = useState(message.folder);
+  // Labels mirror + the apply menu's options for this message's mailbox, which
+  // are fetched lazily the first time the menu opens.
+  const [labels, setLabels] = useState<Label[]>(message.labels);
+  const [labelMenuOpen, setLabelMenuOpen] = useState(false);
+  const [availableLabels, setAvailableLabels] = useState<Label[] | null>(null);
+
+  function openLabelMenu() {
+    setLabelMenuOpen((open) => !open);
+    if (availableLabels === null) {
+      listLabels(message.mailboxId)
+        .then((r) => setAvailableLabels(r.labels))
+        .catch(() => setAvailableLabels([]));
+    }
+  }
+
+  function toggleLabel(label: Label) {
+    if (labels.some((l) => l.id === label.id)) {
+      setLabels((prev) => prev.filter((l) => l.id !== label.id));
+      onRemoveLabel(message.id, label.id);
+    } else {
+      setLabels((prev) =>
+        [...prev, label].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      onApplyLabel(message.id, label);
+    }
+  }
 
   if (!expanded) {
     return (
@@ -87,6 +125,17 @@ export function MessageView({
           <p className="text-xs text-slate-500">
             {new Date(message.date).toLocaleString()}
           </p>
+          {labels.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {labels.map((l) => (
+                <LabelChip
+                  key={l.id}
+                  label={l}
+                  onRemove={() => toggleLabel(l)}
+                />
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
@@ -113,6 +162,60 @@ export function MessageView({
           >
             <Forward className="h-4 w-4" />
           </Button>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Labels"
+              onClick={openLabelMenu}
+            >
+              <Tag className="h-4 w-4" />
+            </Button>
+            {labelMenuOpen && (
+              <>
+                {/* Click-away backdrop. */}
+                <button
+                  type="button"
+                  aria-hidden
+                  tabIndex={-1}
+                  className="fixed inset-0 z-10 cursor-default"
+                  onClick={() => setLabelMenuOpen(false)}
+                />
+                <div className="absolute right-0 z-20 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-slate-700 bg-slate-800 p-1 shadow-lg">
+                  {availableLabels === null ? (
+                    <p className="px-2 py-1.5 text-xs text-slate-400">Loading…</p>
+                  ) : availableLabels.length === 0 ? (
+                    <p className="px-2 py-1.5 text-xs text-slate-400">
+                      No labels in this mailbox yet.
+                    </p>
+                  ) : (
+                    availableLabels.map((l) => {
+                      const checked = labels.some((x) => x.id === l.id);
+                      return (
+                        <button
+                          key={l.id}
+                          type="button"
+                          onClick={() => toggleLabel(l)}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-700"
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-sm"
+                            style={{
+                              backgroundColor: l.color || DEFAULT_LABEL_COLOR,
+                            }}
+                          />
+                          <span className="flex-1 truncate">{l.name}</span>
+                          {checked && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="icon"

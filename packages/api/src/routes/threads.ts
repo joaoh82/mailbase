@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { getAccessibleThread } from "../lib/access";
 import type { AppEnv } from "../lib/context";
+import { labelsByMessage } from "../lib/labels";
 import { messageDetail } from "../lib/serialize";
 
 export const threadRoutes = new Hono<AppEnv>();
@@ -46,6 +47,11 @@ threadRoutes.get("/:id", async (c) => {
     byMessage.set(a.messageId, list);
   }
 
+  const labelsByMsg = await labelsByMessage(
+    db,
+    rows.map((m) => m.id),
+  );
+
   return c.json({
     thread: {
       id: thread.id,
@@ -53,6 +59,8 @@ threadRoutes.get("/:id", async (c) => {
       messageCount: thread.messageCount,
       lastMessageAt: thread.lastMessageAt.toISOString(),
     },
-    messages: rows.map((m) => messageDetail(m, byMessage.get(m.id) ?? [])),
+    messages: rows.map((m) =>
+      messageDetail(m, byMessage.get(m.id) ?? [], labelsByMsg.get(m.id) ?? []),
+    ),
   });
 });

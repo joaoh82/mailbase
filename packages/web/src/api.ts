@@ -28,6 +28,15 @@ export type MessageDirection = "inbound" | "outbound";
 /** '' (fine), or 'bounced' / 'complained' once a provider webhook reports it. */
 export type DeliveryStatus = "" | "bounced" | "complained" | string;
 
+/** A user-defined label (MAIL-16), scoped to a shared mailbox. */
+export interface Label {
+  id: string;
+  mailboxId: string;
+  name: string;
+  /** '' (default chip styling) or a "#rrggbb" hex value. */
+  color: string;
+}
+
 export interface MessageListItem {
   id: string;
   threadId: string | null;
@@ -42,6 +51,8 @@ export interface MessageListItem {
   folder: Folder;
   direction: MessageDirection;
   deliveryStatus: DeliveryStatus;
+  /** Labels applied to this message, sorted by name (MAIL-16). */
+  labels: Label[];
   // Only set in the unified "all inboxes" view (Phase 5), so the row can show
   // which mailbox a message landed in.
   mailboxId?: string;
@@ -147,9 +158,11 @@ export function listMessages(
   mailboxId: string,
   folder: Folder,
   cursor?: string | null,
+  labelId?: string | null,
 ): Promise<{ messages: MessageListItem[]; nextCursor: string | null }> {
   const params = new URLSearchParams({ folder });
   if (cursor) params.set("cursor", cursor);
+  if (labelId) params.set("labelId", labelId);
   return request(`/api/mailboxes/${mailboxId}/messages?${params}`);
 }
 
@@ -206,6 +219,55 @@ export function moveMessage(
   return request(`/api/messages/${id}/move`, {
     method: "POST",
     body: JSON.stringify({ folder }),
+  });
+}
+
+// --- Labels (MAIL-16) -------------------------------------------------------
+
+/** Labels defined on a mailbox the user belongs to (sidebar + apply menu). */
+export function listLabels(mailboxId: string): Promise<{ labels: Label[] }> {
+  return request(`/api/labels?mailboxId=${encodeURIComponent(mailboxId)}`);
+}
+
+export function createLabel(
+  mailboxId: string,
+  name: string,
+  color = "",
+): Promise<{ label: Label }> {
+  return request("/api/labels", {
+    method: "POST",
+    body: JSON.stringify({ mailboxId, name, color }),
+  });
+}
+
+export function updateLabel(
+  labelId: string,
+  patch: { name?: string; color?: string },
+): Promise<{ label: Label }> {
+  return request(`/api/labels/${labelId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteLabel(labelId: string): Promise<unknown> {
+  return request(`/api/labels/${labelId}`, { method: "DELETE" });
+}
+
+/** Apply a label to a message (idempotent). */
+export function applyLabel(messageId: string, labelId: string): Promise<unknown> {
+  return request(`/api/messages/${messageId}/labels/${labelId}`, {
+    method: "PUT",
+  });
+}
+
+/** Remove a label from a message (idempotent). */
+export function removeLabel(
+  messageId: string,
+  labelId: string,
+): Promise<unknown> {
+  return request(`/api/messages/${messageId}/labels/${labelId}`, {
+    method: "DELETE",
   });
 }
 

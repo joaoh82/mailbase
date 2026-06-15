@@ -62,7 +62,9 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   mail lands or the unread count changes (and on tab focus), so you rarely refresh by hand;
   the cadence is configurable in Settings (default every 30s, or off). A one-click **Refresh**
   (or the `r` shortcut) is always there as the manual fallback, without a full page reload.
-  Full-text search via SQLite FTS5. HTML mail renders in a
+  **Gmail-style labels** layer on top of folders — create named, optionally colored labels
+  per mailbox, apply any number to a message, and filter the inbox to a single label from
+  the sidebar. Full-text search via SQLite FTS5. HTML mail renders in a
   **sandboxed iframe with remote images blocked by default**; attachments download through
   signed, expiring URLs.
 - **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
