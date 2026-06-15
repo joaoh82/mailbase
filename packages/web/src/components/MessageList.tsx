@@ -3,6 +3,7 @@ import { Paperclip, RefreshCw, Search, Star, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Folder, Mailbox, MessageListItem } from "../api";
 import { cn } from "../lib/utils";
+import { LabelChip } from "./LabelChip";
 import { Input } from "./ui/input";
 
 export function formatListDate(iso: string): string {
@@ -30,6 +31,7 @@ export function MessageList({
   loading,
   hasMore,
   activeQuery,
+  activeLabelName,
   selectedMessageId,
   error,
   allInboxes = false,
@@ -45,6 +47,8 @@ export function MessageList({
   loading: boolean;
   hasMore: boolean;
   activeQuery: string;
+  /** Name of the active label filter (MAIL-16), shown in the list header. */
+  activeLabelName?: string;
   selectedMessageId: string | null;
   error: string | null;
   // The unified "all inboxes" view (Phase 5): no single mailbox, so search is
@@ -118,7 +122,9 @@ export function MessageList({
               ? `All inboxes — ${folder}`
               : activeQuery
                 ? `Results for “${activeQuery}”`
-                : `${folder} — ${mailbox?.address ?? ""}`}
+                : activeLabelName
+                  ? `${activeLabelName} — ${mailbox?.address ?? ""}`
+                  : `${folder} — ${mailbox?.address ?? ""}`}
           </p>
           <button
             type="button"
@@ -254,6 +260,13 @@ function MessageRow({
           </span>
         </div>
         <p className="truncate text-xs text-slate-500">{item.snippet}</p>
+        {item.labels.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {item.labels.map((l) => (
+              <LabelChip key={l.id} label={l} />
+            ))}
+          </div>
+        )}
       </div>
       {!item.isRead && (
         <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-500" />

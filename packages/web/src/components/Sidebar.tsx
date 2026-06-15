@@ -7,11 +7,13 @@ import {
   PenSquare,
   Send,
   Settings,
+  Tag,
   Trash2,
   Users,
 } from "lucide-react";
-import type { Folder, Mailbox, User } from "../api";
+import type { Folder, Label, Mailbox, User } from "../api";
 import { cn } from "../lib/utils";
+import { DEFAULT_LABEL_COLOR } from "./LabelChip";
 import { Button } from "./ui/button";
 import { Logo } from "./ui/Logo";
 
@@ -38,10 +40,14 @@ export function Sidebar({
   searching,
   canManage,
   totalUnread,
+  labels,
+  labelFilter,
   onCompose,
   onSelectDomain,
   onSelectMailbox,
   onSelectFolder,
+  onSelectLabel,
+  onManageLabels,
   onManage,
   onOpenAdmin,
   onOpenSettings,
@@ -56,10 +62,17 @@ export function Sidebar({
   searching: boolean;
   canManage: boolean;
   totalUnread: number;
+  // Labels of the selected mailbox (empty in the "all inboxes" view, since
+  // labels are mailbox-scoped). MAIL-16.
+  labels: Label[];
+  /** Active label filter (a label id), or null when filtering by folder. */
+  labelFilter: string | null;
   onCompose: () => void;
   onSelectDomain: (domain: string) => void;
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
+  onSelectLabel: (labelId: string) => void;
+  onManageLabels: () => void;
   onManage: () => void;
   onOpenAdmin: () => void;
   onOpenSettings: () => void;
@@ -134,7 +147,10 @@ export function Sidebar({
             onClick={() => onSelectFolder(id)}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800",
-              folder === id && !searching && "bg-slate-800 text-slate-100",
+              folder === id &&
+                !searching &&
+                !labelFilter &&
+                "bg-slate-800 text-slate-100",
             )}
           >
             <Icon className="h-4 w-4" />
@@ -147,6 +163,53 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+
+      {/* Labels of the selected mailbox (MAIL-16). Hidden in the "all inboxes"
+          view, where there's no single mailbox to scope labels to. Selecting a
+          label filters that mailbox's inbox to messages carrying it. */}
+      {!isAll && selected && (
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between px-2">
+            <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+              Labels
+            </label>
+            <button
+              onClick={onManageLabels}
+              title="Manage labels"
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200"
+            >
+              <Tag className="h-3.5 w-3.5" /> Manage
+            </button>
+          </div>
+          {labels.length === 0 ? (
+            <button
+              onClick={onManageLabels}
+              className="mt-1 px-2 py-1 text-left text-xs text-slate-600 hover:text-slate-400"
+            >
+              No labels yet — create one.
+            </button>
+          ) : (
+            <nav className="mt-1 space-y-0.5 overflow-y-auto">
+              {labels.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => onSelectLabel(l.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800",
+                    labelFilter === l.id && "bg-slate-800 text-slate-100",
+                  )}
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: l.color || DEFAULT_LABEL_COLOR }}
+                  />
+                  <span className="flex-1 truncate text-left">{l.name}</span>
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
+      )}
 
       <div className="mt-auto space-y-1 border-t border-slate-800 pt-3">
         {user.isAdmin && (

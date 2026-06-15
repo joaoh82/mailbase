@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   fetchMessage,
   fetchThread,
+  type Label,
   type MessageDetail,
 } from "../api";
 import { isAuthError } from "../App";
@@ -15,6 +16,8 @@ export function ThreadView({
   onSetRead,
   onMove,
   onReply,
+  onApplyLabel,
+  onRemoveLabel,
 }: {
   selection: Selection | null;
   onAuthError: () => void;
@@ -22,6 +25,8 @@ export function ThreadView({
   onSetRead: (id: string, isRead: boolean) => void;
   onMove: (id: string, target: "inbox" | "archive" | "trash") => void;
   onReply: (message: MessageDetail, kind: ComposeKind) => void;
+  onApplyLabel: (messageId: string, label: Label) => void;
+  onRemoveLabel: (messageId: string, labelId: string) => void;
 }) {
   const [messages, setMessages] = useState<MessageDetail[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +82,8 @@ export function ThreadView({
             onSetRead={onSetRead}
             onMove={onMove}
             onReply={onReply}
+            onApplyLabel={onApplyLabel}
+            onRemoveLabel={onRemoveLabel}
           />
         ))}
       </div>

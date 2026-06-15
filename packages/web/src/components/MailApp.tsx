@@ -1,17 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyLabel,
   listAllMessages,
   listIdentities,
+  listLabels,
   listMailboxes,
   listMessages,
   logout,
   moveMessage,
   pollChanges,
+  removeLabel,
   searchMessages,
   setRead,
   setStarred,
   type Folder,
   type Identity,
+  type Label,
   type Mailbox,
   type MessageDetail,
   type MessageListItem,
@@ -38,6 +42,11 @@ const ManageMailboxModal = lazy(() =>
 );
 const SettingsModal = lazy(() =>
   import("./SettingsModal").then((m) => ({ default: m.SettingsModal })),
+);
+// The labels manager is light (no Tiptap), but lazy-loaded for consistency so
+// it stays out of the initial bundle until opened (MAIL-16).
+const LabelsModal = lazy(() =>
+  import("./LabelsModal").then((m) => ({ default: m.LabelsModal })),
 );
 
 // Shared loading shell for the lazy modals above.
@@ -94,6 +103,12 @@ export function MailApp({
   const [reloadNonce, setReloadNonce] = useState(0);
   // Live-update cadence (MAIL-14), in ms; 0 = off. Per-browser, from Settings.
   const [pollIntervalMs, setPollIntervalMs] = useState(readPollIntervalMs);
+  // Labels (MAIL-16): the selected mailbox's labels for the sidebar/apply menu,
+  // the active label filter (a label id, or null for plain folder view), and
+  // the labels-manager modal.
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [labelsManaging, setLabelsManaging] = useState(false);
   const loadSeq = useRef(0);
 
   const isAll = mailboxId === ALL_INBOXES;
@@ -139,6 +154,25 @@ export function MailApp({
 
   useEffect(refreshIdentities, [refreshIdentities]);
 
+  // Labels of the selected mailbox (MAIL-16) for the sidebar nav and the apply
+  // menu. Mailbox-scoped, so the unified "all inboxes" view has none. Refetched
+  // when the mailbox changes or after the labels manager edits them.
+  const refreshLabels = useCallback(() => {
+    if (!mailboxId || mailboxId === ALL_INBOXES) {
+      setLabels([]);
+      return;
+    }
+    listLabels(mailboxId)
+      .then(({ labels }) => setLabels(labels))
+      .catch(fail);
+  }, [mailboxId, fail]);
+
+  useEffect(refreshLabels, [refreshLabels]);
+
+  // A label belongs to one mailbox, so any mailbox switch clears the filter —
+  // this covers manual selection and the domain-switcher auto-fallback alike.
+  useEffect(() => setLabelFilter(null), [mailboxId]);
+
   // Fetch page one for the active view (mailbox + folder, or a search). Shared
   // by the initial-load effect and the manual refresh so the two can't drift;
   // returns null when there's no mailbox selected yet.
@@ -152,8 +186,8 @@ export function MailApp({
         messages: r.messages,
         nextCursor: null as string | null,
       }));
-    return listMessages(mailboxId, folder);
-  }, [mailboxId, isAll, folder, activeQuery]);
+    return listMessages(mailboxId, folder, undefined, labelFilter);
+  }, [mailboxId, isAll, folder, activeQuery, labelFilter]);
 
   // (Re)load page one whenever mailbox, folder, active search, or a send change.
   // This clears the list and selection first (the view is changing under us);
@@ -210,7 +244,9 @@ export function MailApp({
 
   // Press "r" to refresh — but never while typing (search box, composer) or
   // with a modal open, and not when a modifier is held (Cmd+R = reload).
-  const anyModalOpen = Boolean(compose || managing || adminOpen || settingsOpen);
+  const anyModalOpen = Boolean(
+    compose || managing || adminOpen || settingsOpen || labelsManaging,
+  );
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "r" || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -314,7 +350,7 @@ export function MailApp({
     setLoadingList(true);
     const more = isAll
       ? listAllMessages(folder, nextCursor)
-      : listMessages(mailboxId, folder, nextCursor);
+      : listMessages(mailboxId, folder, nextCursor, labelFilter);
     more
       .then((page) => {
         if (seq !== loadSeq.current) return;
@@ -325,7 +361,16 @@ export function MailApp({
       .finally(() => {
         if (seq === loadSeq.current) setLoadingList(false);
       });
-  }, [mailboxId, isAll, folder, nextCursor, loadingList, activeQuery, fail]);
+  }, [
+    mailboxId,
+    isAll,
+    folder,
+    nextCursor,
+    loadingList,
+    activeQuery,
+    labelFilter,
+    fail,
+  ]);
 
   const patchItem = useCallback(
     (id: string, patch: Partial<MessageListItem>) => {
@@ -379,6 +424,50 @@ export function MailApp({
         .catch(fail);
     },
     [activeQuery, folder, patchItem, refreshMailboxes, fail],
+  );
+
+  // Selecting a label filters the mailbox's inbox to messages carrying it
+  // (MAIL-16). Like folder selection, it clears any active search; it pins the
+  // folder to inbox so "filter the inbox by label" is the default.
+  const handleSelectLabel = useCallback((labelId: string) => {
+    setFolder("inbox");
+    setLabelFilter(labelId);
+    setActiveQuery("");
+  }, []);
+
+  // Apply / remove a label from the reading pane, mirroring the change onto the
+  // list row optimistically so its chips update without a refetch.
+  const handleApplyLabel = useCallback(
+    (id: string, label: Label) => {
+      setItems((prev) =>
+        prev.map((m) =>
+          m.id === id && !m.labels.some((l) => l.id === label.id)
+            ? {
+                ...m,
+                labels: [...m.labels, label].sort((a, b) =>
+                  a.name.localeCompare(b.name),
+                ),
+              }
+            : m,
+        ),
+      );
+      applyLabel(id, label.id).catch(fail);
+    },
+    [fail],
+  );
+
+  const handleRemoveLabel = useCallback(
+    (id: string, labelId: string) => {
+      setItems((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? { ...m, labels: m.labels.filter((l) => l.id !== labelId) }
+            : m,
+        ),
+      );
+      removeLabel(id, labelId).catch(fail);
+    },
+    [fail],
   );
 
   const handleLogout = useCallback(() => {
@@ -495,6 +584,8 @@ export function MailApp({
         searching={activeQuery !== ""}
         canManage={Boolean(canManage && selectedMailbox)}
         totalUnread={totalUnread}
+        labels={labels}
+        labelFilter={labelFilter}
         onCompose={handleComposeNew}
         onSelectDomain={setDomainFilter}
         onSelectMailbox={(id) => {
@@ -504,7 +595,10 @@ export function MailApp({
         onSelectFolder={(f) => {
           setFolder(f);
           setActiveQuery("");
+          setLabelFilter(null);
         }}
+        onSelectLabel={handleSelectLabel}
+        onManageLabels={() => setLabelsManaging(true)}
         onManage={() => setManaging(true)}
         onOpenAdmin={() => setAdminOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -517,10 +611,14 @@ export function MailApp({
         loading={loadingList}
         hasMore={nextCursor !== null}
         activeQuery={activeQuery}
+        activeLabelName={labels.find((l) => l.id === labelFilter)?.name}
         selectedMessageId={selection?.messageId ?? null}
         error={error}
         allInboxes={isAll}
-        onSearch={setActiveQuery}
+        onSearch={(q) => {
+          setActiveQuery(q);
+          if (q) setLabelFilter(null);
+        }}
         onRefresh={refreshList}
         onLoadMore={loadMore}
         onSelect={handleSelect}
@@ -534,6 +632,8 @@ export function MailApp({
         onSetRead={handleSetRead}
         onMove={handleMove}
         onReply={handleReply}
+        onApplyLabel={handleApplyLabel}
+        onRemoveLabel={handleRemoveLabel}
       />
       {compose && (
         <Suspense
@@ -573,6 +673,15 @@ export function MailApp({
             onPollIntervalChange={setPollIntervalMs}
             onClose={() => setSettingsOpen(false)}
             onSaved={refreshIdentities}
+          />
+        </Suspense>
+      )}
+      {labelsManaging && selectedMailbox && (
+        <Suspense fallback={<ModalFallback />}>
+          <LabelsModal
+            mailbox={selectedMailbox}
+            onClose={() => setLabelsManaging(false)}
+            onChanged={refreshLabels}
           />
         </Suspense>
       )}
