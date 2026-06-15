@@ -289,7 +289,9 @@ Re-running with the same `EMAIL` resets the password.
 Now open `https://mailbase-web.<your-subdomain>.workers.dev`, sign in with that
 email and password, and read your mail: three-pane inbox, threads, search, stars,
 archive/trash, attachment downloads. HTML mail renders in a sandboxed iframe with
-remote images blocked until you click **Load images** on a message.
+remote images blocked until you click **Load images** on a message. For day-to-day use of
+the webmail — composing, labels, shared inboxes, and adding domains/addresses from the UI —
+see the [user guide](USER_GUIDE.md).
 
 > If the correct password is rejected or sign-in hangs, confirm the account is on the
 > **Workers Paid plan** (see Prerequisites): on the free plan the 10ms CPU limit kills
