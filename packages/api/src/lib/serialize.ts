@@ -1,9 +1,15 @@
 import type { attachments, messages } from "@mailbase/shared";
+import type { SerializedLabel } from "./labels";
 
 // Wire shapes for the SPA. Dates go out as ISO strings; body_text only on
-// detail/thread responses, never in folder listings.
+// detail/thread responses, never in folder listings. Labels travel on both
+// rows and detail so the SPA can render chips (MAIL-16); callers pass the
+// message's labels (default none) — see labelsByMessage in lib/labels.
 
-export function messageListItem(m: typeof messages.$inferSelect) {
+export function messageListItem(
+  m: typeof messages.$inferSelect,
+  labels: SerializedLabel[] = [],
+) {
   return {
     id: m.id,
     threadId: m.threadId,
@@ -18,15 +24,17 @@ export function messageListItem(m: typeof messages.$inferSelect) {
     folder: m.folder,
     direction: m.direction,
     deliveryStatus: m.deliveryStatus,
+    labels,
   };
 }
 
 export function messageDetail(
   m: typeof messages.$inferSelect,
   attachmentRows: (typeof attachments.$inferSelect)[],
+  labels: SerializedLabel[] = [],
 ) {
   return {
-    ...messageListItem(m),
+    ...messageListItem(m, labels),
     mailboxId: m.mailboxId,
     bodyText: m.bodyText,
     size: m.size,

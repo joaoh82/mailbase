@@ -1,4 +1,4 @@
-import { attachments, messages } from "@mailbase/shared";
+import { attachments, labels, messageLabels, messages } from "@mailbase/shared";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono, type Context } from "hono";
@@ -10,6 +10,7 @@ import {
   requireSigningKey,
 } from "../lib/attachment-urls";
 import type { AppEnv } from "../lib/context";
+import { labelsByMessage } from "../lib/labels";
 import { messageDetail } from "../lib/serialize";
 
 const MOVE_TARGETS = ["inbox", "archive", "trash"] as const;
@@ -31,7 +32,11 @@ messageRoutes.get("/:id", async (c) => {
     .from(attachments)
     .where(eq(attachments.messageId, message.id))
     .all();
-  return c.json({ message: messageDetail(message, attachmentRows) });
+  const labelsForMessage =
+    (await labelsByMessage(db, [message.id])).get(message.id) ?? [];
+  return c.json({
+    message: messageDetail(message, attachmentRows, labelsForMessage),
+  });
 });
 
 // Lazily parse the immutable raw .eml from R2 for the full body. D1 only
@@ -140,6 +145,60 @@ messageRoutes.post("/:id/move", async (c) => {
     .update(messages)
     .set({ folder: folder as MoveTarget })
     .where(eq(messages.id, message.id));
+  return c.json({ ok: true });
+});
+
+// Apply a label to a message (idempotent). The label must belong to the same
+// mailbox as the message, so you can never tag a message with another mailbox's
+// label (multi-domain invariant). A label not in the message's mailbox — or one
+// the user can't see — is indistinguishable from "not found".
+messageRoutes.put("/:id/labels/:labelId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const message = await getAccessibleMessage(
+    db,
+    c.get("user").id,
+    c.req.param("id"),
+  );
+  if (!message) return c.json({ error: "Message not found" }, 404);
+
+  const label = await db
+    .select({ id: labels.id })
+    .from(labels)
+    .where(
+      and(
+        eq(labels.id, c.req.param("labelId")),
+        eq(labels.mailboxId, message.mailboxId),
+      ),
+    )
+    .get();
+  if (!label) return c.json({ error: "Label not found" }, 404);
+
+  await db
+    .insert(messageLabels)
+    .values({ messageId: message.id, labelId: label.id })
+    .onConflictDoNothing();
+  return c.json({ ok: true });
+});
+
+// Remove a label from a message. Idempotent: removing an absent label is a
+// no-op success, so the UI can call it without first checking.
+messageRoutes.delete("/:id/labels/:labelId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const message = await getAccessibleMessage(
+    db,
+    c.get("user").id,
+    c.req.param("id"),
+  );
+  if (!message) return c.json({ error: "Message not found" }, 404);
+
+  await db
+    .delete(messageLabels)
+    .where(
+      and(
+        eq(messageLabels.messageId, message.id),
+        eq(messageLabels.labelId, c.req.param("labelId")),
+      ),
+    );
   return c.json({ ok: true });
 });
 
