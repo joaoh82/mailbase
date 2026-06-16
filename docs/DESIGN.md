@@ -184,7 +184,15 @@ one-time `invites` link; existing accounts are added to shared mailboxes directl
 2. List: paginated query on `messages` by mailbox + folder. Body text from D1; full original
    (HTML, raw) lazily fetched from R2 through the API.
 3. HTML email rendered in a sandboxed iframe (`sandbox`, CSP, no external loads by default,
-   "load remote images" opt-in) — standard webmail XSS hygiene.
+   "load remote images" opt-in) — standard webmail XSS hygiene. The iframe body background
+   is a per-browser preference (MAIL-15): **white** (the default, always-legible canvas) or
+   **blended**, which gives the body a dark default (`#0f172a` bg, `#e2e8f0` text,
+   `color-scheme:dark`) matching the app chrome. The dark default is applied as a plain
+   `body{}` rule — no `!important`, no targeting of email markup — so any background the
+   email declares wins and rich HTML mail stays legible; only unstyled / plaintext-derived
+   mail picks up the dark canvas. The preference lives in `localStorage` (no migration/API,
+   like the poll cadence) and is set from Settings or a per-message header toggle; the
+   sandbox and CSP are unchanged by it.
 
 ### Live updates (polling)
 The inbox refreshes itself without a manual click (MAIL-14). The SPA polls a cheap

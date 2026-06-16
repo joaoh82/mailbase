@@ -7,6 +7,7 @@ import {
   Image,
   Mail,
   MailOpen,
+  Palette,
   Paperclip,
   Reply,
   ReplyAll,
@@ -27,6 +28,7 @@ import {
   removeLabel,
 } from "../api";
 import { buildEmailSrcdoc, EMAIL_IFRAME_SANDBOX } from "../email-html";
+import type { EmailBgMode } from "../lib/preferences";
 import { cn } from "../lib/utils";
 import { DEFAULT_LABEL_COLOR, LabelChip } from "./LabelChip";
 import type { ComposeKind } from "./MailApp";
@@ -47,6 +49,8 @@ export function MessageView({
   onReply,
   onApplyLabel,
   onRemoveLabel,
+  emailBgMode,
+  onEmailBgModeChange,
 }: {
   message: MessageDetail;
   initiallyExpanded: boolean;
@@ -57,6 +61,10 @@ export function MessageView({
   // Keep the list row's chips in step when labels change here (MAIL-16).
   onApplyLabel: (messageId: string, label: Label) => void;
   onRemoveLabel: (messageId: string, labelId: string) => void;
+  // Reading-pane body background (MAIL-15): a per-browser display preference,
+  // owned by MailApp so the header toggle and Settings stay in sync.
+  emailBgMode: EmailBgMode;
+  onEmailBgModeChange: (mode: EmailBgMode) => void;
 }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   // Local mirrors so the buttons reflect actions immediately even though the
@@ -138,6 +146,28 @@ export function MessageView({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              emailBgMode === "blended"
+                ? "Email background: blended — switch to white"
+                : "Email background: white — switch to blended"
+            }
+            title="Toggle email background"
+            onClick={() =>
+              onEmailBgModeChange(
+                emailBgMode === "blended" ? "white" : "blended",
+              )
+            }
+          >
+            <Palette
+              className={cn(
+                "h-4 w-4",
+                emailBgMode === "blended" && "text-sky-400",
+              )}
+            />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -295,7 +325,7 @@ export function MessageView({
         </div>
       )}
 
-      <MessageBody message={message} />
+      <MessageBody message={message} bgMode={emailBgMode} />
 
       {message.attachments.length > 0 && (
         <footer className="flex flex-wrap gap-2 border-t border-slate-800 px-4 py-3">
@@ -312,7 +342,13 @@ export function MessageView({
   );
 }
 
-function MessageBody({ message }: { message: MessageDetail }) {
+function MessageBody({
+  message,
+  bgMode,
+}: {
+  message: MessageDetail;
+  bgMode: EmailBgMode;
+}) {
   const [full, setFull] = useState<{
     html: string | null;
     text: string | null;
@@ -363,8 +399,13 @@ function MessageBody({ message }: { message: MessageDetail }) {
       <iframe
         title={`Message: ${message.subject}`}
         sandbox={EMAIL_IFRAME_SANDBOX}
-        srcDoc={buildEmailSrcdoc(full.html, { allowRemoteImages })}
-        className="h-[60vh] w-full rounded-b-lg bg-white"
+        srcDoc={buildEmailSrcdoc(full.html, { allowRemoteImages, bgMode })}
+        // Match the element bg to the srcdoc body so there's no flash of the
+        // wrong color before the document paints, and no seam around the edges.
+        className={cn(
+          "h-[60vh] w-full rounded-b-lg",
+          bgMode === "blended" ? "bg-slate-900" : "bg-white",
+        )}
       />
     </div>
   );
