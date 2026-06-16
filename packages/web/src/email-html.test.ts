@@ -26,4 +26,53 @@ describe("buildEmailSrcdoc", () => {
     expect(EMAIL_IFRAME_SANDBOX).not.toContain("allow-scripts");
     expect(EMAIL_IFRAME_SANDBOX).not.toContain("allow-same-origin");
   });
+
+  it("uses the white canvas by default (no bgMode) and in white mode", () => {
+    const fallback = buildEmailSrcdoc("<p>hi</p>", { allowRemoteImages: false });
+    const white = buildEmailSrcdoc("<p>hi</p>", {
+      allowRemoteImages: false,
+      bgMode: "white",
+    });
+    for (const doc of [fallback, white]) {
+      expect(doc).toContain("background:#fff");
+      expect(doc).toContain("color:#111");
+      expect(doc).not.toContain("color-scheme:dark");
+    }
+  });
+
+  it("uses a dark default canvas with light text in blended mode", () => {
+    const doc = buildEmailSrcdoc("<p>hi</p>", {
+      allowRemoteImages: false,
+      bgMode: "blended",
+    });
+    expect(doc).toContain("background:#0f172a");
+    expect(doc).toContain("color:#e2e8f0");
+    expect(doc).toContain("color-scheme:dark");
+    expect(doc).not.toContain("background:#fff");
+  });
+
+  it("keeps the body style a plain default — no !important fighting email CSS", () => {
+    const doc = buildEmailSrcdoc("<p>hi</p>", {
+      allowRemoteImages: false,
+      bgMode: "blended",
+    });
+    // A bare body{} rule lets the email's own background/colors win.
+    expect(doc).not.toContain("!important");
+  });
+
+  it("leaves the sandbox/CSP unchanged across background modes", () => {
+    const white = buildEmailSrcdoc("<p>hi</p>", {
+      allowRemoteImages: false,
+      bgMode: "white",
+    });
+    const blended = buildEmailSrcdoc("<p>hi</p>", {
+      allowRemoteImages: false,
+      bgMode: "blended",
+    });
+    for (const doc of [white, blended]) {
+      expect(doc).toContain("default-src 'none'");
+      expect(doc).toContain("img-src data: cid:");
+      expect(doc).toContain("form-action 'none'");
+    }
+  });
 });

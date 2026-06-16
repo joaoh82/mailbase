@@ -4,9 +4,26 @@
 // subresource except inline styles and data:/cid: images. Remote images are
 // opt-in per message via the "load images" toggle, which only widens img-src.
 
+import type { EmailBgMode } from "./lib/preferences";
+
+// Body defaults per background mode (MAIL-15). These set the *default* canvas
+// only — they're a plain `body{}` rule with no !important and no element
+// targeting, so any color the email declares on its own markup wins. "white" is
+// the historical, always-legible canvas. "blended" gives a dark default that
+// matches the app chrome (slate-900 bg, slate-200 text) plus color-scheme:dark
+// so the UA scrollbars/form controls and any prefers-color-scheme:dark email
+// styles follow suit. Real HTML emails that set their own background stay on it;
+// only unstyled / plaintext-ish mail picks up the dark default. Residual case:
+// an email that sets dark text but no background can read dark-on-dark — the
+// user flips back to "white" via the reading-pane toggle.
+const BODY_STYLE: Record<EmailBgMode, string> = {
+  white: "color:#111;background:#fff",
+  blended: "color:#e2e8f0;background:#0f172a;color-scheme:dark",
+};
+
 export function buildEmailSrcdoc(
   html: string,
-  options: { allowRemoteImages: boolean },
+  options: { allowRemoteImages: boolean; bgMode?: EmailBgMode },
 ): string {
   const imgSrc = options.allowRemoteImages
     ? "img-src data: cid: https: http:"
@@ -17,13 +34,14 @@ export function buildEmailSrcdoc(
     imgSrc,
     "form-action 'none'",
   ].join("; ");
+  const bodyColors = BODY_STYLE[options.bgMode ?? "white"];
   return [
     "<!doctype html><html><head>",
     '<meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
     // Links escape the sandbox into a fresh tab; nothing navigates the app.
     '<base target="_blank">',
-    "<style>body{margin:8px;font-family:system-ui,sans-serif;color:#111;background:#fff;word-break:break-word}</style>",
+    `<style>body{margin:8px;font-family:system-ui,sans-serif;${bodyColors};word-break:break-word}</style>`,
     "</head><body>",
     html,
     "</body></html>",

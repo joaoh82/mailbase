@@ -1,23 +1,33 @@
 import { useState } from "react";
 import { ApiError, type Identity, updateIdentitySignature } from "../api";
-import { POLL_INTERVAL_OPTIONS, writePollIntervalMs } from "../lib/preferences";
+import {
+  EMAIL_BG_OPTIONS,
+  type EmailBgMode,
+  POLL_INTERVAL_OPTIONS,
+  writePollIntervalMs,
+} from "../lib/preferences";
 import { RichTextEditor } from "./RichTextEditor";
 import { Button } from "./ui/button";
 
-// Per-user settings: the live-update cadence (MAIL-14, saved per-browser) and
-// the signature on each of your send-as identities (MAIL-4). A signature is
-// appended to the bottom of outgoing mail sent from that address; leave it
-// empty to fall back to the mailbox's default signature.
+// Per-user settings: the live-update cadence (MAIL-14, saved per-browser), the
+// reading-pane email background (MAIL-15, per-browser), and the signature on
+// each of your send-as identities (MAIL-4). A signature is appended to the
+// bottom of outgoing mail sent from that address; leave it empty to fall back
+// to the mailbox's default signature.
 export function SettingsModal({
   identities,
   pollIntervalMs,
   onPollIntervalChange,
+  emailBgMode,
+  onEmailBgModeChange,
   onClose,
   onSaved,
 }: {
   identities: Identity[];
   pollIntervalMs: number;
   onPollIntervalChange: (ms: number) => void;
+  emailBgMode: EmailBgMode;
+  onEmailBgModeChange: (mode: EmailBgMode) => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -84,6 +94,37 @@ export function SettingsModal({
               }}
             >
               {POLL_INTERVAL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="border-t border-slate-800" />
+
+        <div className="space-y-2">
+          <div>
+            <h2 className="text-lg font-semibold">Reading pane</h2>
+            <p className="text-sm text-slate-400">
+              How the email body is backed. “White” is the classic light canvas;
+              “Blended with theme” gives unstyled mail a dark default that matches
+              the app — emails that set their own background keep it, so rich HTML
+              stays legible. Applies to this browser; also toggleable from the
+              palette icon on an open message.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Email background</span>
+            <select
+              className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100"
+              value={emailBgMode}
+              onChange={(e) =>
+                onEmailBgModeChange(e.target.value as EmailBgMode)
+              }
+            >
+              {EMAIL_BG_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

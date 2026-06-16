@@ -6,6 +6,7 @@ import {
   type MessageDetail,
 } from "../api";
 import { isAuthError } from "../App";
+import type { EmailBgMode } from "../lib/preferences";
 import type { ComposeKind, Selection } from "./MailApp";
 import { MessageView } from "./MessageView";
 
@@ -18,6 +19,8 @@ export function ThreadView({
   onReply,
   onApplyLabel,
   onRemoveLabel,
+  emailBgMode,
+  onEmailBgModeChange,
 }: {
   selection: Selection | null;
   onAuthError: () => void;
@@ -27,6 +30,8 @@ export function ThreadView({
   onReply: (message: MessageDetail, kind: ComposeKind) => void;
   onApplyLabel: (messageId: string, label: Label) => void;
   onRemoveLabel: (messageId: string, labelId: string) => void;
+  emailBgMode: EmailBgMode;
+  onEmailBgModeChange: (mode: EmailBgMode) => void;
 }) {
   const [messages, setMessages] = useState<MessageDetail[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +89,8 @@ export function ThreadView({
             onReply={onReply}
             onApplyLabel={onApplyLabel}
             onRemoveLabel={onRemoveLabel}
+            emailBgMode={emailBgMode}
+            onEmailBgModeChange={onEmailBgModeChange}
           />
         ))}
       </div>

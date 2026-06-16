@@ -57,7 +57,7 @@ mailbase is a three-pane webmail:
 - **Message list (middle):** a search box, the current folder/label, a **Refresh** button,
   and the list of messages. Scroll to the bottom to load older mail.
 - **Reading pane (right):** the selected conversation, with per-message actions across the
-  top (reply, forward, label, star, archive, trash).
+  top (background toggle, reply, forward, label, star, archive, trash).
 
 ## Reading mail
 
@@ -67,6 +67,12 @@ mailbase is a three-pane webmail:
 - **HTML mail is sandboxed.** Messages render in an isolated frame, and **remote images are
   blocked by default** (a privacy measure — remote images can track when you open mail).
   Click **Load images** in the bar above the message to load them for that message.
+- **Email background:** by default the email body sits on a **white** canvas. The **palette**
+  icon in a message's action row toggles it to **blended** — a dark default that matches the
+  rest of the app, so unstyled mail no longer floats as a bright white card. Emails that set
+  their own background (most rich HTML newsletters) keep it, so they stay readable; if a
+  blended message ever looks wrong, flip it back to white. The choice is per-browser and can
+  also be set in **Signature** (sidebar) → **Reading pane**.
 - **Attachments** appear as chips at the bottom of a message. Click one to download it
   (downloads go through short-lived signed URLs).
 - **Mark read/unread:** use the envelope button in a message's action row. Unread messages
@@ -260,6 +266,7 @@ admin account is created from the command line during setup
 | Star / unstar | star icon in the list row or reading pane |
 | Mark read / unread | envelope icon in the message action row |
 | Load remote images | **Load images** bar above the message body |
+| White ⇄ blended email background | **palette** icon in the message action row, or **Signature** (sidebar) → **Reading pane** |
 | Download an attachment | attachment chip at the bottom of a message |
 | Apply/remove a label | **tag** icon in the message action row |
 | Filter by label | click a label under **Labels** (sidebar) |

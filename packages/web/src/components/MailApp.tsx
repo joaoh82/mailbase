@@ -23,7 +23,12 @@ import {
 } from "../api";
 import { isAuthError } from "../App";
 import { isMessagePresent } from "../lib/messages";
-import { readPollIntervalMs } from "../lib/preferences";
+import {
+  type EmailBgMode,
+  readEmailBgMode,
+  readPollIntervalMs,
+  writeEmailBgMode,
+} from "../lib/preferences";
 import { AdminPanel } from "./AdminPanel";
 import type { ComposeInitial } from "./ComposeModal";
 import { MessageList } from "./MessageList";
@@ -103,6 +108,10 @@ export function MailApp({
   const [reloadNonce, setReloadNonce] = useState(0);
   // Live-update cadence (MAIL-14), in ms; 0 = off. Per-browser, from Settings.
   const [pollIntervalMs, setPollIntervalMs] = useState(readPollIntervalMs);
+  // Reading-pane email background (MAIL-15): white vs blended-with-theme.
+  // Per-browser; settable from Settings and the reading-pane header toggle, so
+  // the write+setState pair is centralized here and shared with both surfaces.
+  const [emailBgMode, setEmailBgMode] = useState(readEmailBgMode);
   // Labels (MAIL-16): the selected mailbox's labels for the sidebar/apply menu,
   // the active label filter (a label id, or null for plain folder view), and
   // the labels-manager modal.
@@ -400,6 +409,13 @@ export function MailApp({
     [patchItem, fail],
   );
 
+  // Persist + apply the reading-pane background choice (MAIL-15) from either
+  // surface (Settings select or the per-message header toggle).
+  const handleEmailBgModeChange = useCallback((mode: EmailBgMode) => {
+    writeEmailBgMode(mode);
+    setEmailBgMode(mode);
+  }, []);
+
   const handleSetRead = useCallback(
     (id: string, isRead: boolean) => {
       patchItem(id, { isRead });
@@ -634,6 +650,8 @@ export function MailApp({
         onReply={handleReply}
         onApplyLabel={handleApplyLabel}
         onRemoveLabel={handleRemoveLabel}
+        emailBgMode={emailBgMode}
+        onEmailBgModeChange={handleEmailBgModeChange}
       />
       {compose && (
         <Suspense
@@ -671,6 +689,8 @@ export function MailApp({
             identities={identities}
             pollIntervalMs={pollIntervalMs}
             onPollIntervalChange={setPollIntervalMs}
+            emailBgMode={emailBgMode}
+            onEmailBgModeChange={handleEmailBgModeChange}
             onClose={() => setSettingsOpen(false)}
             onSaved={refreshIdentities}
           />

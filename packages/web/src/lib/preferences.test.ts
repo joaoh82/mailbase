@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_EMAIL_BG_MODE,
   DEFAULT_POLL_INTERVAL_MS,
+  EMAIL_BG_OPTIONS,
+  parseEmailBgMode,
   parsePollIntervalMs,
   POLL_INTERVAL_OPTIONS,
 } from "./preferences";
@@ -26,6 +29,29 @@ describe("parsePollIntervalMs", () => {
   it("round-trips every offered option", () => {
     for (const o of POLL_INTERVAL_OPTIONS) {
       expect(parsePollIntervalMs(String(o.value))).toBe(o.value);
+    }
+  });
+});
+
+describe("parseEmailBgMode", () => {
+  it("defaults to white when nothing is stored", () => {
+    expect(parseEmailBgMode(null)).toBe(DEFAULT_EMAIL_BG_MODE);
+    expect(DEFAULT_EMAIL_BG_MODE).toBe("white");
+  });
+
+  it("keeps the blended mode", () => {
+    expect(parseEmailBgMode("blended")).toBe("blended");
+  });
+
+  it("falls back to white for unrecognized or junk values", () => {
+    expect(parseEmailBgMode("")).toBe("white");
+    expect(parseEmailBgMode("dark")).toBe("white");
+    expect(parseEmailBgMode("White")).toBe("white"); // case-sensitive
+  });
+
+  it("round-trips every offered option", () => {
+    for (const o of EMAIL_BG_OPTIONS) {
+      expect(parseEmailBgMode(o.value)).toBe(o.value);
     }
   });
 });

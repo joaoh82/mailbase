@@ -50,3 +50,50 @@ export function writePollIntervalMs(ms: number): void {
     // Best-effort: a blocked localStorage just means the choice isn't remembered.
   }
 }
+
+// Reading-pane email-body background (MAIL-15). Like the poll cadence above this
+// is a pure display preference, so it lives in localStorage — no migration, no
+// API, no cross-device sync. "white" keeps the historical safe canvas; "blended"
+// gives the body a dark default that matches the app chrome. The dark default is
+// applied as a *default only* (no !important, email CSS overrides it), so real
+// HTML emails that declare their own background stay legible — see
+// buildEmailSrcdoc in email-html.ts.
+export type EmailBgMode = "white" | "blended";
+
+/** Background choices offered in Settings / the reading-pane toggle. */
+export const EMAIL_BG_OPTIONS: { label: string; value: EmailBgMode }[] = [
+  { label: "White", value: "white" },
+  { label: "Blended with theme", value: "blended" },
+];
+
+/** Mode used when nothing is stored yet — the safe, always-legible white canvas. */
+export const DEFAULT_EMAIL_BG_MODE: EmailBgMode = "white";
+
+const EMAIL_BG_KEY = "mailbase:emailBgMode";
+
+/**
+ * Coerce a stored background-mode string to a known mode, falling back to the
+ * default for anything missing or unrecognized. Pure, so it's unit-testable
+ * without a DOM — the storage wrappers below just feed it `localStorage.getItem`.
+ */
+export function parseEmailBgMode(raw: string | null): EmailBgMode {
+  return raw === "blended" ? "blended" : DEFAULT_EMAIL_BG_MODE;
+}
+
+/** Read the saved background mode. Safe to call outside a browser. */
+export function readEmailBgMode(): EmailBgMode {
+  try {
+    return parseEmailBgMode(localStorage.getItem(EMAIL_BG_KEY));
+  } catch {
+    return DEFAULT_EMAIL_BG_MODE;
+  }
+}
+
+/** Persist the chosen background mode; ignores storage failures (e.g. private mode). */
+export function writeEmailBgMode(mode: EmailBgMode): void {
+  try {
+    localStorage.setItem(EMAIL_BG_KEY, mode);
+  } catch {
+    // Best-effort: a blocked localStorage just means the choice isn't remembered.
+  }
+}

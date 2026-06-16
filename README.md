@@ -65,8 +65,10 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   **Gmail-style labels** layer on top of folders — create named, optionally colored labels
   per mailbox, apply any number to a message, and filter the inbox to a single label from
   the sidebar. Full-text search via SQLite FTS5. HTML mail renders in a
-  **sandboxed iframe with remote images blocked by default**; attachments download through
-  signed, expiring URLs.
+  **sandboxed iframe with remote images blocked by default**; the reading-pane background is
+  your choice — the classic **white** canvas or one **blended** into the dark theme (per
+  browser, from Settings or a per-message toggle). Attachments download through signed,
+  expiring URLs.
 - **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
   headings, links) that sends real HTML email with a plaintext fallback, plus reply /
   reply-all / forward with quoting, and attachments. **Signatures** are auto-appended to

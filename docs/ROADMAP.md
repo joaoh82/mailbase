@@ -31,7 +31,8 @@ conversation view, read/unread, star, archive/trash, full-text search, signed ex
 attachment URLs, and HTML rendered in a sandboxed iframe with remote images blocked behind
 a per-message opt-in. Later added: **Gmail-style labels** (MAIL-16) — mailbox-scoped,
 optionally colored tags layered on top of folders, applied per message and filterable from
-the sidebar.
+the sidebar — and a per-browser **reading-pane background** choice (MAIL-15): keep the email
+body on the classic white canvas, or blend it into the dark app theme.
 
 ### ✅ Phase 3 — Sending
 The `MailSender` interface with a Resend adapter (the only file allowed to import Resend).
