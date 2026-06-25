@@ -213,6 +213,12 @@ As an admin, click **Domains** (the globe at the bottom of the sidebar) → **Ad
 3. **Provision.** Once the zone is **active** (click **Status** to recheck), open the domain
    and click **Provision**. This enables Email Routing, points the catch-all at the inbound
    email worker, and writes Resend's DKIM/SPF records into the zone. It's safe to re-run.
+   - **Conflicting MX records.** If the zone apex already has a non-Cloudflare MX record (for
+     example a parked-domain "null MX" of `.`), Email Routing can't enable and the result
+     shows a prompt: **Remove it & retry** lets mailbase delete just the offending apex MX
+     and re-provision, or **I'll do it manually** steps aside so you can remove it in the
+     Cloudflare DNS panel and click **Provision** again. Subdomain MX records (such as
+     Resend's `send`) are never touched.
 4. **Verify.** Click **Verify** to have Resend re-check its records, and watch the three
    status badges — **Cloudflare zone**, **Email Routing**, **Resend** — go green. Send a test
    message to `hello@example.com` to confirm inbound, and compose from the new address to

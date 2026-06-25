@@ -18,6 +18,7 @@ import {
   addDomainAddress,
   addDomainMailbox,
   type AdminDomain,
+  type ApexMxConflict,
   ApiError,
   deleteDomainAddress,
   deleteDomainMailbox,
@@ -28,6 +29,7 @@ import {
   listDomains,
   provisionDomain,
   type ProvisionResult,
+  resolveMxConflict,
   setDomainPolicy,
   verifyDomain,
 } from "../api";
@@ -280,6 +282,9 @@ function DomainDetailView({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [provision, setProvision] = useState<ProvisionResult | null>(null);
+  // True once the operator chooses to remove the conflicting apex MX themselves,
+  // so we hide the prompt until the next provision attempt.
+  const [mxManual, setMxManual] = useState(false);
 
   const refreshDetail = useCallback(
     () => getDomainDetail(domainId).then(setDetail),
@@ -350,6 +355,7 @@ function DomainDetailView({
               disabled={busy !== null}
               onClick={() =>
                 act("provision", async () => {
+                  setMxManual(false);
                   setProvision(await provisionDomain(domainId));
                   await refreshStatus();
                 })
@@ -406,6 +412,22 @@ function DomainDetailView({
               </span>
             </p>
           ))}
+          <MxConflictPrompt
+            conflict={
+              provision.steps.find((s) => !s.ok && s.conflict?.kind === "apex_mx")
+                ?.conflict ?? null
+            }
+            manual={mxManual}
+            busy={busy}
+            onRemove={() =>
+              act("resolve-mx", async () => {
+                setMxManual(false);
+                setProvision(await resolveMxConflict(domainId));
+                await refreshStatus();
+              })
+            }
+            onManual={() => setMxManual(true)}
+          />
         </div>
       )}
 
@@ -464,6 +486,76 @@ function StatusSection({
           <RecordsTable records={status.resend.records} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Shown when "Enable Email Routing" fails because a non-Cloudflare MX record
+// sits at the zone apex (Cloudflare error 2008). Offers to remove the offending
+// record(s) and retry, or to step aside while the operator removes them by hand.
+function MxConflictPrompt({
+  conflict,
+  manual,
+  busy,
+  onRemove,
+  onManual,
+}: {
+  conflict: ApexMxConflict | null;
+  manual: boolean;
+  busy: string | null;
+  onRemove: () => void;
+  onManual: () => void;
+}) {
+  if (!conflict) return null;
+  const n = conflict.records.length;
+  const them = n === 1 ? "it" : "them";
+
+  if (manual) {
+    return (
+      <p className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200/90">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          Remove the apex MX record{n === 1 ? "" : "s"} in your Cloudflare DNS
+          panel, then click <strong>Provision</strong> again.
+        </span>
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200/90">
+      <p className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          We detected {n === 1 ? "a conflicting" : `${n} conflicting`} apex MX
+          record{n === 1 ? "" : "s"} blocking Email Routing — Cloudflare will not
+          enable routing while {them} exist:
+        </span>
+      </p>
+      <ul className="ml-6 list-disc space-y-0.5 font-mono text-amber-100/80">
+        {conflict.records.map((r) => (
+          <li key={r.id}>
+            {r.name} MX {r.content || "."}
+          </li>
+        ))}
+      </ul>
+      <p>Want me to remove {them} and retry, or will you do it manually?</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={busy !== null} onClick={onRemove}>
+          {busy === "resolve-mx" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : null}{" "}
+          Remove {them} &amp; retry
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy !== null}
+          onClick={onManual}
+        >
+          I&apos;ll do it manually
+        </Button>
+      </div>
     </div>
   );
 }

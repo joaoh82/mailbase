@@ -43,6 +43,16 @@ export interface DnsRecordInput {
   priority?: number;
 }
 
+/** A DNS record as returned by the Cloudflare API, trimmed to what we need. */
+export interface DnsRecord {
+  id: string;
+  type: string;
+  /** Fully-qualified record name (e.g. "example.com" or "send.example.com"). */
+  name: string;
+  content: string;
+  priority?: number;
+}
+
 export interface CloudflareApi {
   /** True when this is the mock (no real Cloudflare calls happen). */
   readonly simulated: boolean;
@@ -54,6 +64,36 @@ export interface CloudflareApi {
   getCatchAll(zoneId: string): Promise<CatchAllStatus | null>;
   /** Create the record, or update it in place if one of the same type+name exists. */
   upsertDnsRecord(zoneId: string, record: DnsRecordInput): Promise<void>;
+  /** List records in a zone, optionally filtered by type and/or exact name. */
+  listDnsRecords(
+    zoneId: string,
+    query?: { type?: string; name?: string },
+  ): Promise<DnsRecord[]>;
+  deleteDnsRecord(zoneId: string, recordId: string): Promise<void>;
+}
+
+/**
+ * A failed Cloudflare API call, carrying the structured error codes so callers
+ * can branch on a specific failure (e.g. 2008 "Non-Cloudflare MX records
+ * exist") instead of string-matching the message.
+ */
+export class CloudflareApiError extends Error {
+  constructor(
+    message: string,
+    readonly codes: number[],
+    readonly httpStatus: number,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * True when an MX record points at Cloudflare's Email Routing servers
+ * (route1/2/3.mx.cloudflare.net). Anything else at the zone apex is what trips
+ * error 2008 when enabling Email Routing.
+ */
+export function isCloudflareRoutingMx(content: string): boolean {
+  return /(^|\.)mx\.cloudflare\.net\.?$/i.test(content.trim());
 }
 
 interface CfEnvelope<T> {
@@ -88,7 +128,11 @@ export class RealCloudflareApi implements CloudflareApi {
       const detail =
         data?.errors?.map((e) => `${e.code} ${e.message}`).join("; ") ??
         `HTTP ${res.status}`;
-      throw new Error(`Cloudflare ${method} ${path} failed: ${detail}`);
+      throw new CloudflareApiError(
+        `Cloudflare ${method} ${path} failed: ${detail}`,
+        data?.errors?.map((e) => e.code) ?? [],
+        res.status,
+      );
     }
     return data.result;
   }
@@ -191,6 +235,31 @@ export class RealCloudflareApi implements CloudflareApi {
       await this.request("POST", `/zones/${zoneId}/dns_records`, payload);
     }
   }
+
+  async listDnsRecords(
+    zoneId: string,
+    query: { type?: string; name?: string } = {},
+  ): Promise<DnsRecord[]> {
+    const params = new URLSearchParams();
+    if (query.type) params.set("type", query.type);
+    if (query.name) params.set("name", query.name);
+    const qs = params.toString();
+    const records = await this.request<CfDnsRecord[]>(
+      "GET",
+      `/zones/${zoneId}/dns_records${qs ? `?${qs}` : ""}`,
+    );
+    return records.map((r) => ({
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      content: r.content,
+      priority: r.priority,
+    }));
+  }
+
+  async deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
+    await this.request("DELETE", `/zones/${zoneId}/dns_records/${recordId}`);
+  }
 }
 
 interface CfZone {
@@ -209,6 +278,10 @@ interface CfCatchAll {
 }
 interface CfDnsRecord {
   id: string;
+  type: string;
+  name: string;
+  content: string;
+  priority?: number;
 }
 
 function toZoneInfo(zone: CfZone): ZoneInfo {
@@ -254,6 +327,10 @@ export class MockCloudflareApi implements CloudflareApi {
     return { enabled: true, action: "worker", targets: ["mailbase-email-worker"] };
   }
   async upsertDnsRecord(): Promise<void> {}
+  async listDnsRecords(): Promise<DnsRecord[]> {
+    return [];
+  }
+  async deleteDnsRecord(): Promise<void> {}
 }
 
 export function getCloudflareApi(env: Env): CloudflareApi {
