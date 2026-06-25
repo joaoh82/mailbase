@@ -20,8 +20,10 @@ import type { User } from "../context";
 import { grantMailboxMembership } from "../membership";
 import {
   type CloudflareApi,
+  CloudflareApiError,
   emailWorkerName,
   getCloudflareApi,
+  isCloudflareRoutingMx,
   type ZoneInfo,
 } from "./cloudflare";
 import {
@@ -143,10 +145,46 @@ export async function createDomain(
   };
 }
 
+/**
+ * A non-Cloudflare MX record at the zone apex blocks enabling Email Routing
+ * (Cloudflare error 2008). We surface the offending records so the UI can offer
+ * to remove them — see resolveApexMxConflict.
+ */
+export interface ApexMxConflict {
+  kind: "apex_mx";
+  records: { id: string; name: string; content: string; priority?: number }[];
+}
+
 export interface ProvisionStep {
   step: string;
   ok: boolean;
   detail: string;
+  /** Present on a failed "Enable Email Routing" step caused by error 2008. */
+  conflict?: ApexMxConflict;
+}
+
+/**
+ * The non-Cloudflare MX records sitting at the zone apex. These are what
+ * Cloudflare rejects with error 2008 when enabling Email Routing; subdomain MX
+ * (e.g. Resend's `send` MX) and Cloudflare's own routing MX are excluded.
+ */
+export async function findApexMxConflicts(
+  cloudflare: CloudflareApi,
+  zoneId: string,
+  apexName: string,
+): Promise<ApexMxConflict["records"]> {
+  const records = await cloudflare.listDnsRecords(zoneId, {
+    type: "MX",
+    name: apexName,
+  });
+  return records
+    .filter((r) => !isCloudflareRoutingMx(r.content))
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      content: r.content,
+      priority: r.priority,
+    }));
 }
 
 /**
@@ -171,22 +209,50 @@ export async function provisionDomain(
   const registrar = getDomainRegistrar(env);
   const steps: ProvisionStep[] = [];
 
-  const run = async (step: string, fn: () => Promise<string>) => {
+  const run = async (
+    step: string,
+    fn: () => Promise<string>,
+    onError?: (err: unknown) => Promise<ApexMxConflict | undefined>,
+  ) => {
     try {
       steps.push({ step, ok: true, detail: await fn() });
     } catch (err) {
+      let conflict: ApexMxConflict | undefined;
+      if (onError) {
+        // Best-effort enrichment: never let it mask the original failure.
+        try {
+          conflict = await onError(err);
+        } catch {
+          conflict = undefined;
+        }
+      }
       steps.push({
         step,
         ok: false,
         detail: err instanceof Error ? err.message : String(err),
+        conflict,
       });
     }
   };
 
-  await run("Enable Email Routing", async () => {
-    const s = await cloudflare.enableEmailRouting(domain.cloudflareZoneId);
-    return `status: ${s.status}`;
-  });
+  await run(
+    "Enable Email Routing",
+    async () => {
+      const s = await cloudflare.enableEmailRouting(domain.cloudflareZoneId);
+      return `status: ${s.status}`;
+    },
+    async (err) => {
+      if (err instanceof CloudflareApiError && err.codes.includes(2008)) {
+        const records = await findApexMxConflicts(
+          cloudflare,
+          domain.cloudflareZoneId,
+          domain.name,
+        );
+        if (records.length > 0) return { kind: "apex_mx", records };
+      }
+      return undefined;
+    },
+  );
   await run("Route catch-all to the email worker", async () => {
     await cloudflare.setCatchAllToWorker(
       domain.cloudflareZoneId,
@@ -207,6 +273,51 @@ export async function provisionDomain(
   });
 
   return { steps, simulated: cloudflare.simulated || registrar.simulated };
+}
+
+export interface ResolveMxConflictResult {
+  /** The apex MX records that were deleted to unblock Email Routing. */
+  removed: { name: string; content: string }[];
+  steps: ProvisionStep[];
+  simulated: boolean;
+}
+
+/**
+ * Delete the non-Cloudflare apex MX records that block Email Routing (error
+ * 2008), then re-run provisioning. Only ever touches MX records at the zone
+ * apex that don't point at Cloudflare's routing servers — never subdomain MX
+ * (e.g. Resend's `send` MX) nor any other record type.
+ */
+export async function resolveApexMxConflict(
+  db: DrizzleD1Database,
+  env: Env,
+  domain: typeof domains.$inferSelect,
+): Promise<ResolveMxConflictResult> {
+  if (!domain.cloudflareZoneId || !domain.resendDomainId) {
+    throw new ProvisioningError(
+      400,
+      "This domain was set up manually and has no provider handles to provision",
+    );
+  }
+
+  const cloudflare = getCloudflareApi(env);
+  const conflicts = await findApexMxConflicts(
+    cloudflare,
+    domain.cloudflareZoneId,
+    domain.name,
+  );
+  for (const record of conflicts) {
+    await cloudflare.deleteDnsRecord(domain.cloudflareZoneId, record.id);
+  }
+
+  // Re-run the full (idempotent) provisioning so the caller gets fresh step
+  // results — Enable Email Routing should now succeed.
+  const { steps, simulated } = await provisionDomain(db, env, domain);
+  return {
+    removed: conflicts.map((r) => ({ name: r.name, content: r.content })),
+    steps,
+    simulated,
+  };
 }
 
 export interface DomainStatus {

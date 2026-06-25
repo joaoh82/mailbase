@@ -432,7 +432,11 @@ nothing, and says so).
    **pending** until DNS propagates (minutes to hours); click **Status** to recheck.
 3. Once the zone is **active**, click **Provision**. This enables Email Routing, points the
    catch-all rule at `mailbase-email-worker`, and writes Resend's DKIM/SPF records into the
-   zone. It is idempotent — safe to re-run.
+   zone. It is idempotent — safe to re-run. If the apex still carries a non-Cloudflare MX
+   record (e.g. a parked-domain null MX of `.`), Email Routing can't enable (Cloudflare
+   error 2008) and the result offers **Remove it & retry** (mailbase deletes just that apex
+   MX and re-provisions) or **I'll do it manually**; subdomain MX such as Resend's `send` is
+   never touched.
 4. Click **Verify** to have Resend re-check its records, and watch the status badges go
    green. Send a test message to `hello@yourdomain.com` to confirm inbound, and compose
    from the new address to confirm outbound (DKIM/SPF pass).

@@ -10,6 +10,7 @@ import {
   getDomainStatus,
   ProvisioningError,
   provisionDomain,
+  resolveApexMxConflict,
   verifyResendDomain,
 } from "../lib/provisioning";
 
@@ -215,6 +216,23 @@ adminRoutes.post("/domains/:id/provision", async (c) => {
   if (!domain) return c.json({ error: "Domain not found" }, 404);
   try {
     return c.json(await provisionDomain(db, c.env, domain));
+  } catch (err) {
+    if (err instanceof ProvisioningError) {
+      return c.json({ error: err.message }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+// Resolve the apex-MX conflict that blocks Email Routing (Cloudflare error
+// 2008): delete the offending non-Cloudflare apex MX record(s), then re-run
+// provisioning. Subdomain MX (e.g. Resend's `send`) is never touched.
+adminRoutes.post("/domains/:id/resolve-mx-conflict", async (c) => {
+  const db = drizzle(c.env.DB);
+  const domain = await loadDomain(db, c.req.param("id"));
+  if (!domain) return c.json({ error: "Domain not found" }, 404);
+  try {
+    return c.json(await resolveApexMxConflict(db, c.env, domain));
   } catch (err) {
     if (err instanceof ProvisioningError) {
       return c.json({ error: err.message }, err.status as 400);

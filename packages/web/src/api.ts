@@ -513,9 +513,25 @@ export interface DomainStatus {
   simulated: boolean;
 }
 
+export interface ApexMxConflict {
+  kind: "apex_mx";
+  records: { id: string; name: string; content: string; priority?: number }[];
+}
+
+export interface ProvisionStep {
+  step: string;
+  ok: boolean;
+  detail: string;
+  conflict?: ApexMxConflict;
+}
+
 export interface ProvisionResult {
-  steps: { step: string; ok: boolean; detail: string }[];
+  steps: ProvisionStep[];
   simulated: boolean;
+}
+
+export interface ResolveMxConflictResult extends ProvisionResult {
+  removed: { name: string; content: string }[];
 }
 
 export function listDomains(): Promise<{ domains: AdminDomain[] }> {
@@ -539,6 +555,12 @@ export function getDomainStatus(id: string): Promise<DomainStatus> {
 
 export function provisionDomain(id: string): Promise<ProvisionResult> {
   return request(`/api/admin/domains/${id}/provision`, { method: "POST" });
+}
+
+export function resolveMxConflict(id: string): Promise<ResolveMxConflictResult> {
+  return request(`/api/admin/domains/${id}/resolve-mx-conflict`, {
+    method: "POST",
+  });
 }
 
 export function verifyDomain(id: string): Promise<DomainStatus> {
