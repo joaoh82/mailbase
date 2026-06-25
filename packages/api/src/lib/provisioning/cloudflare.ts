@@ -48,7 +48,7 @@ export interface CloudflareApi {
   readonly simulated: boolean;
   findOrCreateZone(name: string): Promise<ZoneInfo>;
   getZone(zoneId: string): Promise<ZoneInfo | null>;
-  enableEmailRouting(zoneId: string, name: string): Promise<EmailRoutingStatus>;
+  enableEmailRouting(zoneId: string): Promise<EmailRoutingStatus>;
   getEmailRoutingStatus(zoneId: string): Promise<EmailRoutingStatus>;
   setCatchAllToWorker(zoneId: string, workerName: string): Promise<void>;
   getCatchAll(zoneId: string): Promise<CatchAllStatus | null>;
@@ -117,16 +117,16 @@ export class RealCloudflareApi implements CloudflareApi {
     }
   }
 
-  async enableEmailRouting(
-    zoneId: string,
-    name: string,
-  ): Promise<EmailRoutingStatus> {
+  async enableEmailRouting(zoneId: string): Promise<EmailRoutingStatus> {
     // POST .../email/routing/dns both enables routing and adds+locks the
-    // inbound MX/SPF records for the zone apex.
+    // inbound MX/SPF records for the zone apex. Send no body: a `name` field
+    // scopes routing to a subdomain, and Cloudflare validates it must be
+    // strictly below the apex — passing the apex itself fails with
+    // "2007 Invalid Input: must be a subdomain of <zone>". Omitting `name`
+    // is the apex case we want.
     const settings = await this.request<CfRoutingSettings>(
       "POST",
       `/zones/${zoneId}/email/routing/dns`,
-      { name },
     );
     return { enabled: settings.enabled, status: settings.status };
   }
@@ -243,7 +243,7 @@ export class MockCloudflareApi implements CloudflareApi {
       nameServers: ["ns1.mock-cloudflare.com", "ns2.mock-cloudflare.com"],
     };
   }
-  async enableEmailRouting(): Promise<EmailRoutingStatus> {
+  async enableEmailRouting(_zoneId: string): Promise<EmailRoutingStatus> {
     return { enabled: true, status: "ready" };
   }
   async getEmailRoutingStatus(): Promise<EmailRoutingStatus> {

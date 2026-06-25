@@ -184,7 +184,7 @@ export async function provisionDomain(
   };
 
   await run("Enable Email Routing", async () => {
-    const s = await cloudflare.enableEmailRouting(domain.cloudflareZoneId, domain.name);
+    const s = await cloudflare.enableEmailRouting(domain.cloudflareZoneId);
     return `status: ${s.status}`;
   });
   await run("Route catch-all to the email worker", async () => {
