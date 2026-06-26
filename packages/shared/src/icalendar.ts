@@ -250,3 +250,79 @@ export function buildReplyIcs(input: ReplyIcsInput): string {
   lines.push("END:VEVENT", "END:VCALENDAR");
   return `${lines.join("\r\n")}\r\n`;
 }
+
+// --- iMIP REQUEST / CANCEL builder (MAIL-30) -------------------------------
+
+export interface EventIcsAttendee {
+  addr: string;
+  displayName?: string;
+}
+
+export interface EventIcsInput {
+  /** REQUEST for a new/updated invite, CANCEL to call it off. */
+  method: "REQUEST" | "CANCEL";
+  uid: string;
+  sequence: number;
+  organizerAddr: string;
+  organizerName?: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  startsAt: Date;
+  endsAt?: Date | null;
+  allDay?: boolean;
+  attendees: EventIcsAttendee[];
+  /** When the message is generated; goes out as DTSTAMP. */
+  dtstamp: Date;
+}
+
+/**
+ * Build a `METHOD:REQUEST` (invite / update) or `METHOD:CANCEL` iCalendar that
+ * the organizer sends to attendees (iMIP). REQUEST asks each attendee to RSVP
+ * (RSVP=TRUE, PARTSTAT=NEEDS-ACTION); CANCEL marks the event STATUS:CANCELLED.
+ * Times are emitted in UTC (or as a DATE for all-day), which every client
+ * resolves unambiguously — no VTIMEZONE needed.
+ */
+export function buildEventIcs(input: EventIcsInput): string {
+  const cancel = input.method === "CANCEL";
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "PRODID:-//mailbase//Calendar//EN",
+    "VERSION:2.0",
+    `METHOD:${input.method}`,
+    "BEGIN:VEVENT",
+    `UID:${input.uid}`,
+    `SEQUENCE:${input.sequence}`,
+    `DTSTAMP:${icsUtcDateTime(input.dtstamp)}`,
+  ];
+  if (input.allDay) {
+    lines.push(`DTSTART;VALUE=DATE:${icsDate(input.startsAt)}`);
+    if (input.endsAt) lines.push(`DTEND;VALUE=DATE:${icsDate(input.endsAt)}`);
+  } else {
+    lines.push(`DTSTART:${icsUtcDateTime(input.startsAt)}`);
+    if (input.endsAt) lines.push(`DTEND:${icsUtcDateTime(input.endsAt)}`);
+  }
+  if (input.summary) lines.push(`SUMMARY:${escapeText(input.summary)}`);
+  if (input.description) {
+    lines.push(`DESCRIPTION:${escapeText(input.description)}`);
+  }
+  if (input.location) lines.push(`LOCATION:${escapeText(input.location)}`);
+  lines.push(`STATUS:${cancel ? "CANCELLED" : "CONFIRMED"}`);
+
+  const orgCn = input.organizerName
+    ? `;CN=${paramValue(input.organizerName)}`
+    : "";
+  lines.push(`ORGANIZER${orgCn}:mailto:${input.organizerAddr}`);
+
+  for (const a of input.attendees) {
+    const cn = a.displayName ? `;CN=${paramValue(a.displayName)}` : "";
+    // CANCEL just lists who it affects; REQUEST asks for an RSVP.
+    const params = cancel
+      ? ";ROLE=REQ-PARTICIPANT"
+      : ";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE";
+    lines.push(`ATTENDEE${cn}${params}:mailto:${a.addr}`);
+  }
+
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return `${lines.join("\r\n")}\r\n`;
+}

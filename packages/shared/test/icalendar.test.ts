@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildReplyIcs, parseICalendar } from "../src/icalendar";
+import {
+  buildEventIcs,
+  buildReplyIcs,
+  parseICalendar,
+} from "../src/icalendar";
 
 // Inline, standards-shaped iCalendar payloads. To harden the parser against a
 // real sender, paste its `text/calendar` part (Gmail "Show original" / "View
@@ -251,5 +255,65 @@ describe("buildReplyIcs", () => {
     });
     expect(ics).toContain("DTSTART;VALUE=DATE:20260720");
     expect(parseICalendar(ics)!.allDay).toBe(true);
+  });
+});
+
+describe("buildEventIcs", () => {
+  const base = {
+    uid: "new-evt-1@testdomain.com",
+    organizerAddr: "josh@testdomain.com",
+    organizerName: "Josh",
+    summary: "Design review",
+    description: "Bring the mocks.",
+    location: "Room B",
+    startsAt: new Date("2026-09-01T15:00:00Z"),
+    endsAt: new Date("2026-09-01T16:00:00Z"),
+    attendees: [
+      { addr: "alice@gmail.com", displayName: "Alice" },
+      { addr: "bob@contoso.com" },
+    ],
+    dtstamp: new Date("2026-06-26T12:00:00Z"),
+  };
+
+  it("builds a REQUEST that parses back with organizer and all attendees", () => {
+    const ics = buildEventIcs({ ...base, method: "REQUEST", sequence: 0 });
+    expect(ics).toContain("METHOD:REQUEST");
+    expect(ics).toContain("STATUS:CONFIRMED");
+    expect(ics).toContain("RSVP=TRUE");
+    expect(ics).toContain("DTSTART:20260901T150000Z");
+
+    const parsed = parseICalendar(ics)!;
+    expect(parsed.method).toBe("REQUEST");
+    expect(parsed.uid).toBe("new-evt-1@testdomain.com");
+    expect(parsed.organizerAddr).toBe("josh@testdomain.com");
+    expect(parsed.summary).toBe("Design review");
+    expect(parsed.location).toBe("Room B");
+    expect(parsed.attendees.map((a) => a.addr).sort()).toEqual([
+      "alice@gmail.com",
+      "bob@contoso.com",
+    ]);
+    expect(
+      parsed.attendees.every((a) => a.partstat === "needs-action"),
+    ).toBe(true);
+  });
+
+  it("builds a CANCEL with a bumped sequence and cancelled status", () => {
+    const ics = buildEventIcs({ ...base, method: "CANCEL", sequence: 1 });
+    expect(ics).toContain("METHOD:CANCEL");
+    const parsed = parseICalendar(ics)!;
+    expect(parsed.method).toBe("CANCEL");
+    expect(parsed.status).toBe("cancelled");
+    expect(parsed.sequence).toBe(1);
+  });
+
+  it("escapes TEXT fields (no raw semicolons/commas leak into values)", () => {
+    const ics = buildEventIcs({
+      ...base,
+      method: "REQUEST",
+      sequence: 0,
+      summary: "Lunch; then talk, briefly",
+    });
+    expect(ics).toContain("SUMMARY:Lunch\\; then talk\\, briefly");
+    expect(parseICalendar(ics)!.summary).toBe("Lunch; then talk, briefly");
   });
 });

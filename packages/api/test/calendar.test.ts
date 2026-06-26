@@ -1,4 +1,4 @@
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { eventAttendees, events } from "@mailbase/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, login, type LoginResult, seed } from "./seed";
@@ -9,6 +9,7 @@ interface SerializedEvent {
   id: string;
   mailboxId: string;
   messageId: string | null;
+  organizerAddr: string;
   summary: string;
   startsAt: string;
   endsAt: string | null;
@@ -107,16 +108,20 @@ function get(path: string) {
   });
 }
 
-function post(path: string, body: unknown) {
+function mutate(method: string, path: string, body?: unknown) {
   return SELF.fetch(`http://webmail.local${path}`, {
-    method: "POST",
+    method,
     headers: {
       Cookie: auth.cookie,
       "X-CSRF-Token": auth.csrfToken,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+function post(path: string, body: unknown) {
+  return mutate("POST", path, body);
 }
 
 describe("calendar read API", () => {
@@ -275,5 +280,137 @@ describe("message → event", () => {
   it("404s for a message in a foreign mailbox", async () => {
     const res = await get("/api/messages/msg-foreign/event");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("create / update / cancel invites", () => {
+  const newEvent = {
+    mailboxId: "mbx-josh",
+    summary: "Design review",
+    startsAt: "2026-09-01T15:00:00Z",
+    endsAt: "2026-09-01T16:00:00Z",
+    location: "Room B",
+    attendees: ["alice@gmail.com", "bob@contoso.com"],
+  };
+
+  async function readIcs(eventId: string): Promise<string> {
+    const obj = await env.MAIL_BUCKET.get(
+      `calendar/testdomain.com/mbx-josh/${eventId}.ics`,
+    );
+    expect(obj).not.toBeNull();
+    return obj!.text();
+  }
+
+  it("creates an event, sends a REQUEST, and persists organizer + attendees", async () => {
+    const res = await post("/api/calendar/events", newEvent);
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: SerializedEvent };
+    expect(event.mailboxId).toBe("mbx-josh");
+    expect(event.organizerAddr).toBe("josh@testdomain.com");
+    expect(event.status).toBe("confirmed");
+    expect(event.summary).toBe("Design review");
+
+    // The organizer (self) plus the two invitees are recorded.
+    const self = event.attendees.find((a) => a.addr === "josh@testdomain.com");
+    expect(self?.isSelf).toBe(true);
+    expect(
+      event.attendees.filter((a) => !a.isSelf).map((a) => a.addr).sort(),
+    ).toEqual(["alice@gmail.com", "bob@contoso.com"]);
+
+    // The outbound REQUEST .ics was stored, with the organizer and invitees.
+    const ics = await readIcs(event.id);
+    expect(ics).toContain("METHOD:REQUEST");
+    expect(ics).toContain("SEQUENCE:0");
+    expect(ics).toContain("ORGANIZER");
+    expect(ics).toContain("alice@gmail.com");
+    expect(ics).toContain("bob@contoso.com");
+    expect(ics).toContain("DTSTART:20260901T150000Z");
+  });
+
+  it("validates the request body", async () => {
+    expect((await post("/api/calendar/events", { ...newEvent, summary: "" })).status).toBe(400);
+    expect((await post("/api/calendar/events", { ...newEvent, attendees: [] })).status).toBe(400);
+    expect(
+      (await post("/api/calendar/events", { ...newEvent, attendees: ["nope"] })).status,
+    ).toBe(400);
+    expect(
+      (await post("/api/calendar/events", { ...newEvent, startsAt: "not-a-date" })).status,
+    ).toBe(400);
+  });
+
+  it("404s creating in a mailbox the caller is not a member of", async () => {
+    const res = await post("/api/calendar/events", {
+      ...newEvent,
+      mailboxId: "mbx-other",
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("requires a CSRF token to create", async () => {
+    const res = await SELF.fetch("http://webmail.local/api/calendar/events", {
+      method: "POST",
+      headers: { Cookie: auth.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify(newEvent),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("edits an event, bumping the SEQUENCE and re-sending", async () => {
+    const created = (
+      (await (await post("/api/calendar/events", newEvent)).json()) as {
+        event: SerializedEvent;
+      }
+    ).event;
+
+    const res = await mutate("PATCH", `/api/calendar/events/${created.id}`, {
+      summary: "Design review (moved)",
+      attendees: ["alice@gmail.com"],
+    });
+    expect(res.status).toBe(200);
+    const { event } = (await res.json()) as { event: SerializedEvent };
+    expect(event.summary).toBe("Design review (moved)");
+    expect(
+      event.attendees.filter((a) => !a.isSelf).map((a) => a.addr),
+    ).toEqual(["alice@gmail.com"]);
+
+    const ics = await readIcs(created.id);
+    expect(ics).toContain("SEQUENCE:1");
+    expect(ics).toContain("Design review (moved)");
+  });
+
+  it("cancels an event, sending a CANCEL and marking it cancelled", async () => {
+    const created = (
+      (await (await post("/api/calendar/events", newEvent)).json()) as {
+        event: SerializedEvent;
+      }
+    ).event;
+
+    const res = await mutate("DELETE", `/api/calendar/events/${created.id}`);
+    expect(res.status).toBe(200);
+
+    const after = await get(`/api/events/${created.id}`);
+    const { event } = (await after.json()) as { event: SerializedEvent };
+    expect(event.status).toBe("cancelled");
+  });
+
+  it("403s editing or cancelling an event we don't organize", async () => {
+    // evt-josh-1's organizer is alice@gmail.com — we're an attendee, not host.
+    expect(
+      (await mutate("PATCH", "/api/calendar/events/evt-josh-1", { summary: "x" }))
+        .status,
+    ).toBe(403);
+    expect(
+      (await mutate("DELETE", "/api/calendar/events/evt-josh-1")).status,
+    ).toBe(403);
+  });
+
+  it("404s editing or cancelling an event in a foreign mailbox", async () => {
+    expect(
+      (await mutate("PATCH", "/api/calendar/events/evt-other", { summary: "x" }))
+        .status,
+    ).toBe(404);
+    expect(
+      (await mutate("DELETE", "/api/calendar/events/evt-other")).status,
+    ).toBe(404);
   });
 });
