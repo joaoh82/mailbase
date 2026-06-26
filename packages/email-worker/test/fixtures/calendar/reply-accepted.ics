@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+VERSION:2.0
+METHOD:REPLY
+BEGIN:VEVENT
+DTSTART;TZID=America/New_York:20260715T090000
+DTEND;TZID=America/New_York:20260715T093000
+DTSTAMP:20260626T130000Z
+ORGANIZER;CN=Alice Organizer:mailto:alice@gmail.com
+UID:tz-event-001@google.com
+ATTENDEE;PARTSTAT=ACCEPTED;CN=josh@example.com:mailto:josh@example.com
+SEQUENCE:0
+SUMMARY:Accepted: Project sync
+END:VEVENT
+END:VCALENDAR
