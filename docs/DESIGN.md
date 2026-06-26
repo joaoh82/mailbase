@@ -145,6 +145,16 @@ labels           (id, mailbox_id, name, color, created_at)         -- user-defin
                   -- (MAIL-16), scoped to a shared mailbox; unique (mailbox_id, name).
 message_labels   (message_id, label_id)                            -- many-to-many join,
                   -- composite pk (message_id, label_id); both FKs cascade-delete.
+events           (id, mailbox_id, message_id NULL, uid, sequence,   -- calendar invites
+                  organizer_addr, summary, description, location,   -- (iCalendar/iMIP,
+                  starts_at, ends_at NULL, all_day, tzid, status,   -- Phase 7 / MAIL-25)
+                  rrule, method, raw_ics_r2_key, created_at, updated_at)
+                  -- unique (mailbox_id, uid): a re-sent invite reconciles by UID, a
+                  -- higher SEQUENCE supersedes, CANCEL flips status. Times in UTC; raw
+                  -- .ics in R2 is the source of truth. message_id ON DELETE SET NULL.
+event_attendees  (event_id, addr, display_name, partstat, role, is_self)
+                  -- composite pk (event_id, addr); FK cascades from events. is_self
+                  -- marks the mailbox's own line, driving RSVP rendering + the REPLY echo.
 messages_fts     (FTS5 virtual table over subject, from_addr, body_text)
 ```
 
