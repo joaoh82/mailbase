@@ -644,6 +644,7 @@ export function MailApp({
             mailboxLabel={
               isAll ? "All inboxes" : (selectedMailbox?.address ?? "Calendar")
             }
+            mailboxes={mailboxes}
             onAuthError={onSignedOut}
           />
         </Suspense>

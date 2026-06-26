@@ -1,7 +1,12 @@
-import { ChevronLeft, ChevronRight, MapPin, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Plus, Users, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type CalendarEvent, listCalendarEvents } from "../api";
+import {
+  type CalendarEvent,
+  listCalendarEvents,
+  type Mailbox,
+} from "../api";
 import { isAuthError } from "../App";
+import { NewEventModal } from "./NewEventModal";
 import {
   type CalendarView as CalView,
   eventsByDay,
@@ -34,11 +39,14 @@ const WEEKDAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function CalendarView({
   mailboxId,
   mailboxLabel,
+  mailboxes,
   onAuthError,
 }: {
   /** A specific mailbox id, or undefined for the unified "all inboxes" view. */
   mailboxId: string | undefined;
   mailboxLabel: string;
+  /** The user's mailboxes, for the "New event" organizer picker. */
+  mailboxes: Mailbox[];
   onAuthError: () => void;
 }) {
   const [view, setView] = useState<CalView>("month");
@@ -47,6 +55,9 @@ export function CalendarView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
+  const [composing, setComposing] = useState(false);
+  // Bumped after creating an event to refetch the current period.
+  const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
 
   const { from, to } = useMemo(() => periodRange(view, anchor), [view, anchor]);
@@ -68,7 +79,7 @@ export function CalendarView({
       .finally(() => {
         if (seq === loadSeq.current) setLoading(false);
       });
-  }, [from, to, mailboxId, onAuthError]);
+  }, [from, to, mailboxId, reloadNonce, onAuthError]);
 
   const periodLabel = useMemo(() => {
     if (view === "month") {
@@ -94,6 +105,14 @@ export function CalendarView({
           <p className="text-xs text-slate-400">{periodLabel}</p>
         </div>
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            size="sm"
+            className="mr-1"
+            disabled={mailboxes.length === 0}
+            onClick={() => setComposing(true)}
+          >
+            <Plus className="h-4 w-4" /> New event
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -157,6 +176,15 @@ export function CalendarView({
 
       {selected && (
         <EventDetail event={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {composing && (
+        <NewEventModal
+          mailboxes={mailboxes}
+          defaultMailboxId={mailboxId}
+          onClose={() => setComposing(false)}
+          onCreated={() => setReloadNonce((n) => n + 1)}
+        />
       )}
     </section>
   );

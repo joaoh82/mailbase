@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { CalendarEvent } from "../api";
 import {
   addDays,
+  dateInputToIso,
   eventDayKey,
   eventsByDay,
   formatEventTime,
+  isEmail,
+  isoToLocalInput,
   localDayKey,
+  localInputToIso,
   monthMatrix,
+  parseAttendeeList,
   periodRange,
   sameDay,
   shiftAnchor,
@@ -147,5 +152,32 @@ describe("formatEventTime", () => {
     expect(formatEventTime(ranged)).toContain("–");
     const single = ev({ id: "s", startsAt: "2026-07-15T13:00:00Z" });
     expect(formatEventTime(single)).not.toContain("–");
+  });
+});
+
+describe("composer helpers", () => {
+  it("splits an attendee field on commas / semicolons / whitespace", () => {
+    expect(
+      parseAttendeeList("alice@x.com, bob@y.com\n c@z.com; d@w.com"),
+    ).toEqual(["alice@x.com", "bob@y.com", "c@z.com", "d@w.com"]);
+    expect(parseAttendeeList("   ")).toEqual([]);
+  });
+
+  it("validates email shape", () => {
+    expect(isEmail("a@b.com")).toBe(true);
+    expect(isEmail("nope")).toBe(false);
+    expect(isEmail("a@b")).toBe(false);
+  });
+
+  it("converts a date input to UTC midnight without shifting", () => {
+    expect(dateInputToIso("2026-07-20")).toBe("2026-07-20T00:00:00.000Z");
+    expect(dateInputToIso("nope")).toBeNull();
+  });
+
+  it("round-trips an instant through the datetime-local input", () => {
+    // local→iso→local preserves the instant (truncated to the minute).
+    const iso = "2026-07-15T13:00:00.000Z";
+    expect(localInputToIso(isoToLocalInput(iso))).toBe(iso);
+    expect(localInputToIso("")).toBeNull();
   });
 });
