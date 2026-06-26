@@ -161,3 +161,92 @@ export function parseICalendar(text: string): ParsedCalendarEvent | null {
     return null;
   }
 }
+
+// --- iMIP REPLY builder (MAIL-29) ------------------------------------------
+
+/** PARTSTAT values an attendee may reply with (uppercase, per RFC 5545). */
+export type ReplyPartstat = "ACCEPTED" | "TENTATIVE" | "DECLINED";
+
+export interface ReplyIcsInput {
+  uid: string;
+  sequence: number;
+  /** Bare organizer address (no mailto:). */
+  organizerAddr: string;
+  /** The replying attendee's bare address (this mailbox). */
+  attendeeAddr: string;
+  attendeeName?: string;
+  partstat: ReplyPartstat;
+  summary?: string;
+  startsAt: Date;
+  endsAt?: Date | null;
+  allDay?: boolean;
+  /** When the reply is generated; goes out as DTSTAMP. */
+  dtstamp: Date;
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/** UTC date-time in iCalendar basic format: YYYYMMDDTHHMMSSZ. */
+function icsUtcDateTime(d: Date): string {
+  return (
+    `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}` +
+    `T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`
+  );
+}
+
+/** UTC date in iCalendar DATE format: YYYYMMDD. */
+function icsDate(d: Date): string {
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}`;
+}
+
+/** Escape a TEXT value (RFC 5545 §3.3.11). */
+function escapeText(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
+}
+
+/** A CN parameter value, double-quoted when it contains a special char. */
+function paramValue(s: string): string {
+  return /[",;:]/.test(s) ? `"${s.replace(/"/g, "")}"` : s;
+}
+
+/**
+ * Build a `METHOD:REPLY` iCalendar document for an attendee's RSVP (iMIP, RFC
+ * 6047 / 5546). It echoes the event UID/SEQUENCE and carries the single
+ * replying ATTENDEE line with its new PARTSTAT, addressed to the organizer.
+ * Identity is the UID, never the email Message-ID (our provider rewrites that).
+ */
+export function buildReplyIcs(input: ReplyIcsInput): string {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "PRODID:-//mailbase//Calendar//EN",
+    "VERSION:2.0",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    `UID:${input.uid}`,
+    `SEQUENCE:${input.sequence}`,
+    `DTSTAMP:${icsUtcDateTime(input.dtstamp)}`,
+  ];
+  if (input.allDay) {
+    lines.push(`DTSTART;VALUE=DATE:${icsDate(input.startsAt)}`);
+    if (input.endsAt) lines.push(`DTEND;VALUE=DATE:${icsDate(input.endsAt)}`);
+  } else {
+    lines.push(`DTSTART:${icsUtcDateTime(input.startsAt)}`);
+    if (input.endsAt) lines.push(`DTEND:${icsUtcDateTime(input.endsAt)}`);
+  }
+  if (input.summary) lines.push(`SUMMARY:${escapeText(input.summary)}`);
+  lines.push(`ORGANIZER:mailto:${input.organizerAddr}`);
+  const cn = input.attendeeName
+    ? `;CN=${paramValue(input.attendeeName)}`
+    : "";
+  lines.push(
+    `ATTENDEE${cn};PARTSTAT=${input.partstat}:mailto:${input.attendeeAddr}`,
+  );
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return `${lines.join("\r\n")}\r\n`;
+}

@@ -341,6 +341,24 @@ export function getCalendarEvent(id: string): Promise<{ event: CalendarEvent }> 
   return request(`/api/events/${id}`);
 }
 
+/** The calendar event a message carries (an invite), or null. For the RSVP card. */
+export function getMessageEvent(
+  messageId: string,
+): Promise<{ event: CalendarEvent | null }> {
+  return request(`/api/messages/${messageId}/event`);
+}
+
+/** RSVP to an invite: sends a REPLY to the organizer, returns the new status. */
+export function rsvpEvent(
+  eventId: string,
+  partstat: "accepted" | "tentative" | "declined",
+): Promise<{ partstat: string }> {
+  return request(`/api/events/${eventId}/rsvp`, {
+    method: "POST",
+    body: JSON.stringify({ partstat }),
+  });
+}
+
 export interface Identity {
   id: string;
   address: string;

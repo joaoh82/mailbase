@@ -1,4 +1,11 @@
-import { attachments, labels, messageLabels, messages } from "@mailbase/shared";
+import {
+  attachments,
+  eventAttendees,
+  events,
+  labels,
+  messageLabels,
+  messages,
+} from "@mailbase/shared";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono, type Context } from "hono";
@@ -11,7 +18,7 @@ import {
 } from "../lib/attachment-urls";
 import type { AppEnv } from "../lib/context";
 import { labelsByMessage } from "../lib/labels";
-import { messageDetail } from "../lib/serialize";
+import { calendarEvent, messageDetail } from "../lib/serialize";
 
 const MOVE_TARGETS = ["inbox", "archive", "trash"] as const;
 type MoveTarget = (typeof MOVE_TARGETS)[number];
@@ -37,6 +44,33 @@ messageRoutes.get("/:id", async (c) => {
   return c.json({
     message: messageDetail(message, attachmentRows, labelsForMessage),
   });
+});
+
+// The calendar event carried by this message, if it's a meeting invite (MAIL-29),
+// for the reading-pane RSVP card. Null when the message has no linked event.
+// Access is gated by getAccessibleMessage; the event shares the message's mailbox.
+messageRoutes.get("/:id/event", async (c) => {
+  const db = drizzle(c.env.DB);
+  const message = await getAccessibleMessage(
+    db,
+    c.get("user").id,
+    c.req.param("id"),
+  );
+  if (!message) return c.json({ error: "Message not found" }, 404);
+
+  const event = await db
+    .select()
+    .from(events)
+    .where(eq(events.messageId, message.id))
+    .get();
+  if (!event) return c.json({ event: null });
+
+  const attendees = await db
+    .select()
+    .from(eventAttendees)
+    .where(eq(eventAttendees.eventId, event.id))
+    .all();
+  return c.json({ event: calendarEvent(event, attendees) });
 });
 
 // Lazily parse the immutable raw .eml from R2 for the full body. D1 only

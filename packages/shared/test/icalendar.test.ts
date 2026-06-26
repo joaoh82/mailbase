@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseICalendar } from "../src/icalendar";
+import { buildReplyIcs, parseICalendar } from "../src/icalendar";
 
 // Inline, standards-shaped iCalendar payloads. To harden the parser against a
 // real sender, paste its `text/calendar` part (Gmail "Show original" / "View
@@ -199,5 +199,57 @@ describe("parseICalendar", () => {
     expect(
       parseICalendar("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"),
     ).toBeNull();
+  });
+});
+
+describe("buildReplyIcs", () => {
+  const base = {
+    uid: "evt-1@example.com",
+    sequence: 2,
+    organizerAddr: "alice@gmail.com",
+    attendeeAddr: "josh@testdomain.com",
+    attendeeName: "Josh",
+    startsAt: new Date("2026-07-15T13:00:00Z"),
+    endsAt: new Date("2026-07-15T13:30:00Z"),
+    dtstamp: new Date("2026-06-26T12:00:00Z"),
+  };
+
+  it("produces a METHOD:REPLY that parses back to the same UID/sequence/partstat", () => {
+    const ics = buildReplyIcs({ ...base, partstat: "ACCEPTED" });
+    expect(ics).toContain("METHOD:REPLY");
+    expect(ics).toContain("PARTSTAT=ACCEPTED");
+    expect(ics).toContain("DTSTART:20260715T130000Z");
+
+    const parsed = parseICalendar(ics)!;
+    expect(parsed.method).toBe("REPLY");
+    expect(parsed.uid).toBe("evt-1@example.com");
+    expect(parsed.sequence).toBe(2);
+    expect(parsed.organizerAddr).toBe("alice@gmail.com");
+    expect(parsed.attendees).toHaveLength(1);
+    expect(parsed.attendees[0]).toMatchObject({
+      addr: "josh@testdomain.com",
+      partstat: "accepted",
+    });
+  });
+
+  it("carries DECLINED / TENTATIVE through faithfully", () => {
+    expect(parseICalendar(buildReplyIcs({ ...base, partstat: "DECLINED" }))!.attendees[0]!.partstat).toBe(
+      "declined",
+    );
+    expect(parseICalendar(buildReplyIcs({ ...base, partstat: "TENTATIVE" }))!.attendees[0]!.partstat).toBe(
+      "tentative",
+    );
+  });
+
+  it("writes an all-day reply as a DATE value", () => {
+    const ics = buildReplyIcs({
+      ...base,
+      partstat: "ACCEPTED",
+      allDay: true,
+      startsAt: new Date("2026-07-20T00:00:00Z"),
+      endsAt: new Date("2026-07-21T00:00:00Z"),
+    });
+    expect(ics).toContain("DTSTART;VALUE=DATE:20260720");
+    expect(parseICalendar(ics)!.allDay).toBe(true);
   });
 });

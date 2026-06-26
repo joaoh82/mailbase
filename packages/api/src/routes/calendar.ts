@@ -1,20 +1,27 @@
 import { eventAttendees, events, mailboxMembers } from "@mailbase/shared";
+import { buildReplyIcs } from "@mailbase/shared/calendar";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { hasMailboxAccess } from "../lib/access";
 import type { AppEnv } from "../lib/context";
+import { getMailSender } from "../lib/mail-sender";
 import { calendarEvent } from "../lib/serialize";
 
-// Read-only calendar endpoints (Phase 7 / MAIL-27). Every read is scoped to the
-// caller's mailbox memberships via the same innerJoin-on-mailbox_members pattern
-// as messages/threads, so events never cross the multi-domain boundary.
+// Read-only calendar endpoints (Phase 7 / MAIL-27) plus the RSVP action
+// (MAIL-29). Every access is scoped to the caller's mailbox memberships via the
+// same innerJoin-on-mailbox_members pattern as messages/threads, so events never
+// cross the multi-domain boundary.
 
-// Collection routes mount at /api/calendar; the single-event route mounts at
-// /api/events/:id (matching the RSVP path MAIL-29 will add there).
+// Collection routes mount at /api/calendar; the single-event + RSVP routes mount
+// at /api/events/:id.
 export const calendarRoutes = new Hono<AppEnv>();
 export const eventRoutes = new Hono<AppEnv>();
+
+// PARTSTAT values an attendee may RSVP with, lowercase as stored.
+const RSVP_PARTSTATS = ["accepted", "tentative", "declined"] as const;
+type RsvpPartstat = (typeof RSVP_PARTSTATS)[number];
 
 /** Epoch seconds from an ISO-8601 string or a numeric (epoch-seconds) string. */
 function parseInstant(raw: string | undefined): number | null {
@@ -128,4 +135,110 @@ eventRoutes.get("/:id", async (c) => {
     .where(eq(eventAttendees.eventId, row.event.id))
     .all();
   return c.json({ event: calendarEvent(row.event, attendees) });
+});
+
+// POST /api/events/:id/rsvp { partstat } — respond to an invite. Sends a
+// standards-compliant METHOD:REPLY to the organizer and records the new status
+// on the mailbox's own attendee line. Session + CSRF guarded by the global
+// middleware; the event must be in a mailbox the caller belongs to and they must
+// be an attendee of it.
+eventRoutes.post("/:id/rsvp", async (c) => {
+  const db = drizzle(c.env.DB);
+  const userId = c.get("user").id;
+
+  const body = (await c.req.json().catch(() => null)) as {
+    partstat?: unknown;
+  } | null;
+  const partstat =
+    typeof body?.partstat === "string" ? body.partstat.toLowerCase() : "";
+  if (!RSVP_PARTSTATS.includes(partstat as RsvpPartstat)) {
+    return c.json(
+      { error: "partstat must be accepted, tentative, or declined" },
+      400,
+    );
+  }
+  const stored = partstat as RsvpPartstat;
+
+  const row = await db
+    .select({ event: events })
+    .from(events)
+    .innerJoin(
+      mailboxMembers,
+      and(
+        eq(mailboxMembers.mailboxId, events.mailboxId),
+        eq(mailboxMembers.userId, userId),
+      ),
+    )
+    .where(eq(events.id, c.req.param("id")))
+    .get();
+  if (!row) return c.json({ error: "Event not found" }, 404);
+  const event = row.event;
+
+  if (!event.organizerAddr) {
+    return c.json({ error: "This event has no organizer to reply to" }, 400);
+  }
+
+  // The mailbox's own attendee line (is_self) is what we echo back in the REPLY.
+  const self = await db
+    .select()
+    .from(eventAttendees)
+    .where(
+      and(eq(eventAttendees.eventId, event.id), eq(eventAttendees.isSelf, true)),
+    )
+    .get();
+  if (!self) {
+    return c.json({ error: "You are not an attendee of this event" }, 403);
+  }
+
+  const ics = buildReplyIcs({
+    uid: event.uid,
+    sequence: event.sequence,
+    organizerAddr: event.organizerAddr,
+    attendeeAddr: self.addr,
+    attendeeName: self.displayName || undefined,
+    partstat: stored.toUpperCase() as "ACCEPTED" | "TENTATIVE" | "DECLINED",
+    summary: event.summary || undefined,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    allDay: event.allDay,
+    dtstamp: new Date(),
+  });
+
+  const verb =
+    stored === "accepted"
+      ? "Accepted"
+      : stored === "declined"
+        ? "Declined"
+        : "Tentative";
+  const title = event.summary || "(no title)";
+  try {
+    await getMailSender(c.env).send({
+      from: self.displayName ? `${self.displayName} <${self.addr}>` : self.addr,
+      to: [event.organizerAddr],
+      subject: `${verb}: ${title}`,
+      text: `${self.displayName || self.addr} responded "${verb}" to "${title}".`,
+      attachments: [
+        {
+          filename: "invite.ics",
+          contentType: "text/calendar; method=REPLY; charset=utf-8",
+          content: ics,
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("RSVP reply send failed:", err);
+    return c.json({ error: "The mail provider rejected the reply" }, 502);
+  }
+
+  await db
+    .update(eventAttendees)
+    .set({ partstat: stored })
+    .where(
+      and(
+        eq(eventAttendees.eventId, event.id),
+        eq(eventAttendees.addr, self.addr),
+      ),
+    );
+
+  return c.json({ partstat: stored });
 });
