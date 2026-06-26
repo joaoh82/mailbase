@@ -7,6 +7,8 @@ import {
   addresses,
   attachments,
   domains,
+  eventAttendees,
+  events,
   mailboxes,
   messages,
   threads,
@@ -18,10 +20,13 @@ import worker from "../src/index";
 import {
   ATTACHMENT_BYTES,
   MALFORMED_MIME,
+  SAMPLE_INVITE_UID,
+  calendarInviteEmail,
   htmlEmailWithAttachment,
   makeMessage,
   multiRecipientEmail,
   plainTextEmail,
+  sampleInviteIcs,
 } from "./fixtures";
 
 const db = drizzle(env.DB);
@@ -29,6 +34,8 @@ const db = drizzle(env.DB);
 // Storage is shared across tests in this file: wipe D1 (FTS follows via the
 // delete triggers) and R2 before reseeding.
 async function resetStorage() {
+  await db.delete(eventAttendees);
+  await db.delete(events);
   await db.delete(attachments);
   await db.delete(messages);
   await db.delete(threads);
@@ -350,5 +357,119 @@ describe("inbound pipeline", () => {
     );
     expect(message.rejected).toBeNull();
     expect(await db.select().from(messages).all()).toHaveLength(0);
+  });
+});
+
+describe("inbound calendar invites", () => {
+  it("stores a meeting invite as a calendar event with attendees", async () => {
+    await deliver(calendarInviteEmail());
+
+    const msg = await db.select().from(messages).get();
+    expect(msg).toBeDefined();
+
+    const event = await db.select().from(events).get();
+    expect(event).toBeDefined();
+    expect(event!.mailboxId).toBe("mbx-josh");
+    expect(event!.uid).toBe(SAMPLE_INVITE_UID);
+    expect(event!.method).toBe("REQUEST");
+    expect(event!.status).toBe("confirmed");
+    expect(event!.sequence).toBe(0);
+    expect(event!.summary).toBe("Project sync");
+    expect(event!.location).toBe("Conference Room A");
+    expect(event!.organizerAddr).toBe("alice@gmail.com");
+    expect(event!.allDay).toBe(false);
+    expect(event!.startsAt.toISOString()).toBe("2026-07-15T13:00:00.000Z");
+    expect(event!.endsAt?.toISOString()).toBe("2026-07-15T13:30:00.000Z");
+    expect(event!.messageId).toBe(msg!.id);
+    expect(event!.rawIcsR2Key).toBe(
+      `calendar/testdomain.com/mbx-josh/${msg!.id}.ics`,
+    );
+
+    const ics = await env.MAIL_BUCKET.get(event!.rawIcsR2Key);
+    expect(ics).not.toBeNull();
+    expect(await ics!.text()).toContain("BEGIN:VCALENDAR");
+
+    const attendee = await db
+      .select()
+      .from(eventAttendees)
+      .where(eq(eventAttendees.eventId, event!.id))
+      .get();
+    expect(attendee).toBeDefined();
+    expect(attendee!.addr).toBe("josh@testdomain.com");
+    expect(attendee!.isSelf).toBe(true);
+    expect(attendee!.partstat).toBe("needs-action");
+  });
+
+  it("reconciles a higher-SEQUENCE update to a single event", async () => {
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-a@gmail.com>",
+        ics: sampleInviteIcs({ sequence: 0 }),
+      }),
+    );
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-b@gmail.com>",
+        ics: sampleInviteIcs({ sequence: 1, summary: "Project sync (moved)" }),
+      }),
+    );
+
+    const allEvents = await db.select().from(events).all();
+    expect(allEvents).toHaveLength(1);
+    expect(allEvents[0]!.sequence).toBe(1);
+    expect(allEvents[0]!.summary).toBe("Project sync (moved)");
+    // Two distinct emails (different Message-IDs), one reconciled event.
+    expect(await db.select().from(messages).all()).toHaveLength(2);
+  });
+
+  it("ignores a stale lower-SEQUENCE re-send", async () => {
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-new@gmail.com>",
+        ics: sampleInviteIcs({ sequence: 2, summary: "Current" }),
+      }),
+    );
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-old@gmail.com>",
+        ics: sampleInviteIcs({ sequence: 1, summary: "Stale" }),
+      }),
+    );
+
+    const event = await db.select().from(events).get();
+    expect(event!.sequence).toBe(2);
+    expect(event!.summary).toBe("Current");
+  });
+
+  it("marks an event cancelled on a CANCEL", async () => {
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-c1@gmail.com>",
+        ics: sampleInviteIcs({ sequence: 0 }),
+      }),
+    );
+    await deliver(
+      calendarInviteEmail({
+        messageId: "<invite-c2@gmail.com>",
+        ics: sampleInviteIcs({
+          method: "CANCEL",
+          sequence: 1,
+          status: "CANCELLED",
+        }),
+      }),
+    );
+
+    const event = await db.select().from(events).get();
+    expect(event!.status).toBe("cancelled");
+    expect(event!.method).toBe("CANCEL");
+  });
+
+  it("stores the message but no event when the calendar payload is malformed", async () => {
+    const message = await deliver(
+      calendarInviteEmail({ ics: "BEGIN:VCALENDAR\r\nthis is broken" }),
+    );
+    expect(message.rejected).toBeNull();
+    expect(await db.select().from(messages).all()).toHaveLength(1);
+    expect(await db.select().from(events).all()).toHaveLength(0);
   });
 });
