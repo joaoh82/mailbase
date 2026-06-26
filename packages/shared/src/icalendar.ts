@@ -77,14 +77,91 @@ function normalizePartstat(raw: string): AttendeePartstat {
     : "needs-action";
 }
 
-/** All-day (VALUE=DATE) times are stored as the UTC midnight of the date so a
- *  timezone never shifts the calendar day. ical.js Time months are 1-based. */
-function allDayToUtc(time: {
+/** ical.js Time, narrowed to the fields we read (avoids using the namespace as
+ *  a type). Months are 1-based. */
+interface IcalTimeLike {
   year: number;
   month: number;
   day: number;
-}): Date {
+  hour: number;
+  minute: number;
+  second: number;
+  toJSDate(): Date;
+}
+
+/** All-day (VALUE=DATE) times are stored as the UTC midnight of the date so a
+ *  timezone never shifts the calendar day. */
+function allDayToUtc(time: { year: number; month: number; day: number }): Date {
   return new Date(Date.UTC(time.year, time.month - 1, time.day));
+}
+
+function isValidIanaZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Offset (wall-clock − UTC, in ms) of an IANA zone at a given UTC instant. */
+function zoneOffsetMs(tzid: string, utcMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tzid,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(utcMs));
+  const m: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") m[p.type] = p.value;
+  const wall = Date.UTC(
+    Number(m.year),
+    Number(m.month) - 1,
+    Number(m.day),
+    Number(m.hour),
+    Number(m.minute),
+    Number(m.second),
+  );
+  return wall - utcMs;
+}
+
+/** The UTC instant for a wall-clock time in an IANA zone, resolved via Intl —
+ *  the fallback when an invite carries a bare TZID with no VTIMEZONE block, which
+ *  ical.js would otherwise treat as floating (MAIL-32). Refines once across a DST
+ *  boundary. */
+function wallClockInZoneToUtc(time: IcalTimeLike, tzid: string): Date {
+  const asIfUtc = Date.UTC(
+    time.year,
+    time.month - 1,
+    time.day,
+    time.hour,
+    time.minute,
+    time.second,
+  );
+  const offset = zoneOffsetMs(tzid, asIfUtc);
+  let utc = asIfUtc - offset;
+  const refined = zoneOffsetMs(tzid, utc);
+  if (refined !== offset) utc = asIfUtc - refined;
+  return new Date(utc);
+}
+
+/** Resolve a VEVENT date-time to a UTC instant. All-day stays date-only; a TZID
+ *  with a registered VTIMEZONE (or UTC/floating) is left to ical.js; a bare TZID
+ *  with no VTIMEZONE is resolved from the IANA zone via Intl. */
+function resolveInstant(
+  time: IcalTimeLike,
+  allDay: boolean,
+  tzid: string,
+): Date {
+  if (allDay) return allDayToUtc(time);
+  if (tzid && !ICAL.TimezoneService.has(tzid) && isValidIanaZone(tzid)) {
+    return wallClockInZoneToUtc(time, tzid);
+  }
+  return time.toJSDate();
 }
 
 /**
@@ -115,8 +192,10 @@ export function parseICalendar(text: string): ParsedCalendarEvent | null {
 
     const start = event.startDate;
     const allDay = start.isDate;
-    const tzid = paramString(vevent.getFirstProperty("dtstart")?.getParameter("tzid"));
-    const startsAt = allDay ? allDayToUtc(start) : start.toJSDate();
+    const tzid = paramString(
+      vevent.getFirstProperty("dtstart")?.getParameter("tzid"),
+    );
+    const startsAt = resolveInstant(start, allDay, tzid);
 
     const hasEnd =
       vevent.getFirstProperty("dtend") !== null ||
@@ -124,7 +203,12 @@ export function parseICalendar(text: string): ParsedCalendarEvent | null {
     let endsAt: Date | null = null;
     if (hasEnd) {
       const end = event.endDate;
-      endsAt = end.isDate ? allDayToUtc(end) : end.toJSDate();
+      // A DTEND has its own TZID; an end computed from DURATION inherits the
+      // start's zone.
+      const endTzid =
+        paramString(vevent.getFirstProperty("dtend")?.getParameter("tzid")) ||
+        tzid;
+      endsAt = resolveInstant(end, end.isDate, endTzid);
     }
 
     const rruleProp = vevent.getFirstProperty("rrule");
