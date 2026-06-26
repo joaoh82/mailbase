@@ -344,3 +344,80 @@ login needs the Workers Paid plan. Hard ceiling around $5–10/mo at much higher
 **Suggested order of attack: 0 → 1 → 2 → 3 on a single throwaway domain, then 4 → 5, then
 migrate real domains in 6.** Phases 1–3 give a usable single-user product fast; everything
 after is multiplying it out.
+
+### Phase 7 — Calendar (iCalendar / iMIP) — planned
+
+Receive, display, RSVP to, and send meeting invites by email, with a per-mailbox **Calendar**
+view in the webmail. Tracked as **MAIL-23** (umbrella) → MAIL-24…31. Layered onto the existing
+inbound→R2/D1→webmail pipeline; **no new Cloudflare products** — it reuses the Email Worker,
+D1, R2, the Hono API, the SPA, and the `MailSender`/Resend outbound path.
+
+**Standards.** Email scheduling is **iMIP** (RFC 6047): an ordinary email carrying an
+**iCalendar** (RFC 5545) payload with a `METHOD` — `REQUEST` (invite), `REPLY` (RSVP),
+`CANCEL`. Scheduling semantics are **iTIP** (RFC 5546). The iCalendar `UID` (not the email
+`Message-ID`) is the stable identity across updates and `SEQUENCE` is the revision counter.
+This matters because Resend rewrites our outbound `Message-ID` (see §3 / SELF_HOSTING), so the
+calendar `UID` — never the mail header — is the source of truth for identity and dedup.
+
+**Parsing — decided in MAIL-24: use `ical.js`** (the Mozilla/kewisch library) to read
+VEVENTs. It is the only candidate that is cleanly Cloudflare-Workers-safe (zero production
+deps, ~22 KB gzipped, no Node built-ins) with battle-tested RFC 5545 correctness. `node-ical`
+is rejected: its Temporal-polyfill dependency chain (~150–180 KB) is not Workers-safe and buys
+nothing in v1 (we do not expand recurrence). A hand-rolled parser is a viable fallback but
+earns no advantage over a 22 KB dependency. Timezones: register the invite's `VTIMEZONE` and
+convert to UTC for storage; for an invite that carries a bare `TZID` with no `VTIMEZONE`, fall
+back to `Intl.DateTimeFormat` (native in Workers) for the offset. All-day (`VALUE=DATE`)
+events are floating and must **never** be timezone-shifted.
+
+**Data model.** Two new mailbox-scoped tables (built in MAIL-25):
+```sql
+events            (id, mailbox_id, message_id NULL, uid, sequence, organizer_addr,
+                   summary, description, location, starts_at, ends_at, all_day,
+                   tzid, status, rrule NULL, method, raw_ics_r2_key, created_at, updated_at)
+                   -- UNIQUE (mailbox_id, uid): a re-sent/updated invite reconciles by UID;
+                   --   a higher SEQUENCE replaces, a CANCEL flips status. Scoped by
+                   --   mailbox_id like every other table (multi-domain invariant).
+event_attendees   (event_id, addr, display_name, partstat, role, is_self)
+                   -- is_self marks the mailbox's own ATTENDEE line for RSVP rendering/echo.
+```
+The raw `.ics` is stored verbatim in R2 (source of truth, like the raw `.eml`); the rows are
+derived and rebuildable from it.
+
+**Inbound flow.** The Email Worker detects a `text/calendar` part (inline part and/or `.ics`
+attachment — `postal-mime` surfaces both), parses the VEVENT, and upserts
+`events`/`event_attendees` by `(mailbox_id, uid)` inside the existing atomic D1 batch — as a
+best-effort step: a calendar-parse failure must **never** drop the mail (same discipline as the
+postal-mime try/catch). A later same-`UID` higher-`SEQUENCE` REQUEST replaces the event; a
+`CANCEL` flips `status` to cancelled.
+
+**RSVP / send flow.** An RSVP builds a `METHOD:REPLY` iCalendar (echoing `UID`/`SEQUENCE`, our
+single `ATTENDEE` line with the chosen `PARTSTAT`) addressed to the organizer; creating an
+invite builds `METHOD:REQUEST`; an edit bumps `SEQUENCE`; a cancel sends `CANCEL`. All go out
+through the existing `MailSender`, and the sent copy is stored like any outbound message.
+
+**Outbound iMIP constraint — decided in MAIL-24 (important).** Resend exposes only
+`html` / `text` / `attachments`; it does **not** let us add an inline `text/calendar`
+`multipart/alternative` sibling, which is what makes Gmail/Outlook render native RSVP buttons in
+the reading pane. The v1 recipe is therefore to **attach** the `.ics` with
+`content_type: "text/calendar; method=REQUEST; charset=UTF-8"` and content as a UTF-8 buffer:
+Gmail is tolerant (recognizes the invite / offers add-to-calendar), but **Outlook is unreliable
+with attachment-only calendars** (resend-node #198). First-class inline iMIP likely needs a
+transport with raw-MIME control (an SMTP/Nodemailer-style `alternatives` sender, or Cloudflare
+Email Service once GA) behind a second `MailSender` implementation — the interface already gives
+us that seam. **A live send to real Gmail + Outlook inboxes must verify the recipe before the
+send sub-tickets (MAIL-29/30) commit to it** (see SELF_HOSTING / the MAIL-24 decision record).
+
+**Recurrence — v1 scope (decided in MAIL-24).** Store the raw `RRULE`, render only the master
+instance, and mark recurring invites as such. Full expansion (`EXDATE` / `RECURRENCE-ID`
+overrides) is an explicit follow-up.
+
+**UI.** An invite **RSVP card** in the reading pane (Accept / Tentative / Decline, reflecting
+the current self `PARTSTAT`) and a per-mailbox **Calendar** view (month / week / agenda,
+honoring the active-mailbox / unified "all inboxes" selection), lazy-loaded into its own chunk
+like the Tiptap editor (MAIL-6).
+
+**Milestone:** an invite from Gmail/Outlook/Apple Calendar lands as an RSVP card **and** a
+Calendar event; Accept/Tentative/Decline sends a standards-compliant `REPLY` the organizer's
+calendar ingests; a mailbase-created invite renders in Gmail/Outlook as a real invitation with
+working RSVP; updates/cancels reconcile by `UID`; timezones and all-day events render
+correctly — all mailbox-membership-scoped.

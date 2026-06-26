@@ -69,6 +69,24 @@ hardening:
 
 **Milestone:** Google bill = $0, and a month of daily use without touching the console.
 
+### 🚧 Phase 7 — Calendar (iCalendar / iMIP)
+Receive, display, RSVP to, and send meeting invites by email (the iMIP standard — RFC 6047 /
+5545 / 5546), with a per-mailbox **Calendar** view in the webmail. Layered onto the existing
+pipeline; no new Cloudflare products. Tracked as **MAIL-23** (umbrella) → MAIL-24…31.
+
+- **Spike done (MAIL-24):** parse VEVENTs with **`ical.js`** (the only cleanly
+  Workers-safe option; `node-ical` is rejected for its non-Workers Temporal-polyfill chain).
+  Recurrence v1 stores the raw `RRULE` and renders the master instance only.
+- **Known constraint:** Resend can't add an inline `text/calendar` part (only
+  `html`/`text`/`attachments`), so outbound invites are sent as a `.ics` attachment with
+  `content_type: text/calendar; method=REQUEST` — fine for Gmail, unreliable for Outlook's
+  native RSVP UI. First-class inline iMIP likely needs an SMTP-style sender (or Cloudflare
+  Email Service when GA) behind a second `MailSender`. Pending a live-send verification.
+
+**Milestone:** an invite from Gmail/Outlook/Apple lands as an RSVP card and a calendar event;
+Accept/Tentative/Decline sends a `REPLY` the organizer ingests; a mailbase-created invite
+renders with working RSVP. See [DESIGN.md §9 — Phase 7](DESIGN.md#9-development-plan).
+
 ## Under consideration
 
 Explicitly out of scope for now, but the architecture (raw mail in R2 as the source of
