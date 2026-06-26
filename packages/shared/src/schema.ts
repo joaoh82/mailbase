@@ -348,5 +348,90 @@ export const messageLabels = sqliteTable(
   ],
 );
 
+// Calendar event status (migration 0011): the iCalendar STATUS, normalized.
+export const EVENT_STATUSES = ["confirmed", "cancelled", "tentative"] as const;
+export type EventStatus = (typeof EVENT_STATUSES)[number];
+
+// Attendee participation status (iCalendar PARTSTAT), normalized to lowercase.
+export const ATTENDEE_PARTSTATS = [
+  "needs-action",
+  "accepted",
+  "tentative",
+  "declined",
+] as const;
+export type AttendeePartstat = (typeof ATTENDEE_PARTSTATS)[number];
+
+// Calendar events from iCalendar/iMIP invites (migration 0011, Phase 7). The raw
+// .ics is the source of truth in R2; these rows are derived. Identity is the
+// iCalendar UID (not the email Message-ID), reconciled per mailbox: a higher
+// SEQUENCE supersedes, a CANCEL flips status. Times are stored in UTC; tzid keeps
+// the original zone for display; all_day events are floating (never tz-shifted).
+export const events = sqliteTable(
+  "events",
+  {
+    id: text("id").primaryKey(),
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .references(() => mailboxes.id, { onDelete: "cascade" }),
+    // The message this invite arrived on; null for invites we originate or after
+    // the message is deleted (so purging mail keeps the event).
+    messageId: text("message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    uid: text("uid").notNull(),
+    sequence: integer("sequence").notNull().default(0),
+    organizerAddr: text("organizer_addr").notNull().default(""),
+    summary: text("summary").notNull().default(""),
+    description: text("description").notNull().default(""),
+    location: text("location").notNull().default(""),
+    startsAt: integer("starts_at", { mode: "timestamp" }).notNull(),
+    // Null when the invite carries no DTEND/DURATION.
+    endsAt: integer("ends_at", { mode: "timestamp" }),
+    allDay: integer("all_day", { mode: "boolean" }).notNull().default(false),
+    tzid: text("tzid").notNull().default(""),
+    status: text("status", { enum: EVENT_STATUSES })
+      .notNull()
+      .default("confirmed"),
+    // Raw RRULE, stored verbatim; '' = non-recurring (v1 renders master only).
+    rrule: text("rrule").notNull().default(""),
+    method: text("method").notNull().default(""),
+    rawIcsR2Key: text("raw_ics_r2_key").notNull().default(""),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    // Reconcile a re-sent/updated invite by UID within a mailbox.
+    uniqueIndex("events_mailbox_id_uid_unique").on(table.mailboxId, table.uid),
+    // Calendar range queries over a [from, to] window.
+    index("idx_events_mailbox_starts").on(table.mailboxId, table.startsAt),
+    // "the event for this message" — the reading-pane RSVP card.
+    index("idx_events_message").on(table.messageId),
+  ],
+);
+
+// Per-event attendees (migration 0011). is_self marks the mailbox's own line,
+// which drives RSVP rendering and the PARTSTAT echoed back in a REPLY. Composite
+// pk (event_id, addr) cascades from events.
+export const eventAttendees = sqliteTable(
+  "event_attendees",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    addr: text("addr").notNull(),
+    displayName: text("display_name").notNull().default(""),
+    partstat: text("partstat", { enum: ATTENDEE_PARTSTATS })
+      .notNull()
+      .default("needs-action"),
+    role: text("role").notNull().default(""),
+    isSelf: integer("is_self", { mode: "boolean" }).notNull().default(false),
+  },
+  (table) => [primaryKey({ columns: [table.eventId, table.addr] })],
+);
+
 // messages_fts is an FTS5 virtual table (plus sync triggers) that Drizzle
 // cannot model. It exists only in the SQL migration; query it with raw SQL.

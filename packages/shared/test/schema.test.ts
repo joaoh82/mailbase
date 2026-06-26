@@ -35,4 +35,23 @@ describe("drizzle schema", () => {
     expect(schema.MESSAGE_FOLDERS).toContain("inbox");
     expect(schema.MESSAGE_DIRECTIONS).toEqual(["inbound", "outbound"]);
   });
+
+  it("defines the Phase 7 calendar tables (migration 0011)", () => {
+    expect(getTableName(schema.events)).toBe("events");
+    expect(getTableName(schema.eventAttendees)).toBe("event_attendees");
+  });
+
+  it("exposes calendar status and partstat enums", () => {
+    expect(schema.EVENT_STATUSES).toEqual([
+      "confirmed",
+      "cancelled",
+      "tentative",
+    ]);
+    expect(schema.ATTENDEE_PARTSTATS).toEqual([
+      "needs-action",
+      "accepted",
+      "tentative",
+      "declined",
+    ]);
+  });
 });
