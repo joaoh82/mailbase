@@ -1,4 +1,9 @@
-import type { attachments, messages } from "@mailbase/shared";
+import type {
+  attachments,
+  eventAttendees,
+  events,
+  messages,
+} from "@mailbase/shared";
 import type { SerializedLabel } from "./labels";
 
 // Wire shapes for the SPA. Dates go out as ISO strings; body_text only on
@@ -43,6 +48,40 @@ export function messageDetail(
       filename: a.filename,
       mimeType: a.mimeType,
       size: a.size,
+    })),
+  };
+}
+
+// Calendar event wire shape (Phase 7). Instants go out as ISO strings; all-day
+// events carry allDay so the SPA renders them date-only. Attendees include
+// is_self + partstat so the reading-pane RSVP card (MAIL-29) can render status.
+export function calendarEvent(
+  e: typeof events.$inferSelect,
+  attendees: (typeof eventAttendees.$inferSelect)[] = [],
+) {
+  return {
+    id: e.id,
+    mailboxId: e.mailboxId,
+    messageId: e.messageId,
+    uid: e.uid,
+    sequence: e.sequence,
+    method: e.method,
+    status: e.status,
+    summary: e.summary,
+    description: e.description,
+    location: e.location,
+    organizerAddr: e.organizerAddr,
+    startsAt: e.startsAt.toISOString(),
+    endsAt: e.endsAt ? e.endsAt.toISOString() : null,
+    allDay: e.allDay,
+    tzid: e.tzid,
+    rrule: e.rrule,
+    attendees: attendees.map((a) => ({
+      addr: a.addr,
+      displayName: a.displayName,
+      partstat: a.partstat,
+      role: a.role,
+      isSelf: a.isSelf,
     })),
   };
 }
