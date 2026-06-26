@@ -206,6 +206,44 @@ describe("parseICalendar", () => {
   });
 });
 
+describe("parseICalendar — bare TZID with no VTIMEZONE (MAIL-32)", () => {
+  // America/Los_Angeles is deliberately a zone no other fixture registers a
+  // VTIMEZONE for, so this exercises the Intl fallback (not a registered zone).
+  const bareTzid = (start: string, end: string) =>
+    [
+      "BEGIN:VCALENDAR",
+      "PRODID:-//Microsoft Exchange//EN",
+      "VERSION:2.0",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      `DTSTART;TZID=America/Los_Angeles:${start}`,
+      `DTEND;TZID=America/Los_Angeles:${end}`,
+      "DTSTAMP:20260101T000000Z",
+      "ORGANIZER:mailto:org@example.com",
+      "UID:bare-tz@example.com",
+      "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:josh@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+  it("resolves a summer (PDT, UTC-7) time to the correct UTC instant", () => {
+    const event = parseICalendar(
+      bareTzid("20260715T090000", "20260715T100000"),
+    )!;
+    expect(event.allDay).toBe(false);
+    expect(event.startsAt.toISOString()).toBe("2026-07-15T16:00:00.000Z");
+    expect(event.endsAt?.toISOString()).toBe("2026-07-15T17:00:00.000Z");
+  });
+
+  it("resolves a winter (PST, UTC-8) time, honoring DST", () => {
+    const event = parseICalendar(
+      bareTzid("20260115T090000", "20260115T100000"),
+    )!;
+    expect(event.startsAt.toISOString()).toBe("2026-01-15T17:00:00.000Z");
+    expect(event.endsAt?.toISOString()).toBe("2026-01-15T18:00:00.000Z");
+  });
+});
+
 describe("buildReplyIcs", () => {
   const base = {
     uid: "evt-1@example.com",
