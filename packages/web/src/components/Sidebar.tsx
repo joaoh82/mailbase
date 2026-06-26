@@ -1,5 +1,6 @@
 import {
   Archive,
+  CalendarDays,
   Globe,
   Inbox,
   LogOut,
@@ -38,6 +39,7 @@ export function Sidebar({
   selectedMailboxId,
   folder,
   searching,
+  calendarActive,
   canManage,
   totalUnread,
   labels,
@@ -47,6 +49,7 @@ export function Sidebar({
   onSelectMailbox,
   onSelectFolder,
   onSelectLabel,
+  onOpenCalendar,
   onManageLabels,
   onManage,
   onOpenAdmin,
@@ -60,6 +63,8 @@ export function Sidebar({
   selectedMailboxId: string | null;
   folder: Folder;
   searching: boolean;
+  /** True when the Calendar surface is open (MAIL-28), not the mail panes. */
+  calendarActive: boolean;
   canManage: boolean;
   totalUnread: number;
   // Labels of the selected mailbox (empty in the "all inboxes" view, since
@@ -72,6 +77,7 @@ export function Sidebar({
   onSelectMailbox: (id: string) => void;
   onSelectFolder: (folder: Folder) => void;
   onSelectLabel: (labelId: string) => void;
+  onOpenCalendar: () => void;
   onManageLabels: () => void;
   onManage: () => void;
   onOpenAdmin: () => void;
@@ -150,6 +156,7 @@ export function Sidebar({
               folder === id &&
                 !searching &&
                 !labelFilter &&
+                !calendarActive &&
                 "bg-slate-800 text-slate-100",
             )}
           >
@@ -162,6 +169,16 @@ export function Sidebar({
             )}
           </button>
         ))}
+        <button
+          onClick={onOpenCalendar}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800",
+            calendarActive && "bg-slate-800 text-slate-100",
+          )}
+        >
+          <CalendarDays className="h-4 w-4" />
+          <span className="flex-1 text-left">Calendar</span>
+        </button>
       </nav>
 
       {/* Labels of the selected mailbox (MAIL-16). Hidden in the "all inboxes"
