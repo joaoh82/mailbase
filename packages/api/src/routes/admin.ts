@@ -1,4 +1,10 @@
-import { addresses, domains, mailboxes, messages } from "@mailbase/shared";
+import {
+  addresses,
+  domains,
+  mailboxes,
+  messages,
+  sanitizeDisplayName,
+} from "@mailbase/shared";
 import { and, countDistinct, eq, sql } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { Hono } from "hono";
@@ -125,7 +131,11 @@ adminRoutes.get("/domains/:id", async (c) => {
   if (!domain) return c.json({ error: "Domain not found" }, 404);
 
   const mailboxRows = await db
-    .select({ id: mailboxes.id, name: mailboxes.name })
+    .select({
+      id: mailboxes.id,
+      name: mailboxes.name,
+      displayName: mailboxes.displayName,
+    })
     .from(mailboxes)
     .where(eq(mailboxes.domainId, domain.id))
     .orderBy(mailboxes.name)
@@ -153,6 +163,7 @@ adminRoutes.get("/domains/:id", async (c) => {
     mailboxes: mailboxRows.map((m) => ({
       id: m.id,
       name: m.name,
+      displayName: m.displayName,
       address: `${m.name}@${domain.name}`,
       addresses: (addressesByMailbox.get(m.id) ?? []).map((a) => ({
         id: a.id,
@@ -276,6 +287,15 @@ adminRoutes.post("/domains/:id/mailboxes", async (c) => {
   if (!LOCAL_PART_RE.test(name)) {
     return c.json({ error: "Mailbox name may use letters, digits, . _ - only" }, 400);
   }
+  // The display name is the From name on this mailbox's outbound mail and is
+  // required at creation (MAIL-22). Sanitized so it stays a well-formed header
+  // phrase; '' after sanitizing is rejected.
+  const displayName = sanitizeDisplayName(
+    typeof body?.displayName === "string" ? body.displayName : "",
+  );
+  if (!displayName) {
+    return c.json({ error: "Mailbox display name is required" }, 400);
+  }
 
   const existingMailbox = await db
     .select({ id: mailboxes.id })
@@ -295,7 +315,9 @@ adminRoutes.post("/domains/:id/mailboxes", async (c) => {
   }
 
   const mailboxId = crypto.randomUUID();
-  await db.insert(mailboxes).values({ id: mailboxId, domainId: domain.id, name });
+  await db
+    .insert(mailboxes)
+    .values({ id: mailboxId, domainId: domain.id, name, displayName });
   await db.insert(addresses).values({
     id: crypto.randomUUID(),
     domainId: domain.id,
@@ -305,7 +327,10 @@ adminRoutes.post("/domains/:id/mailboxes", async (c) => {
   const user = c.get("user");
   await grantMailboxMembership(db, user.id, mailboxId, "owner", user.displayName);
 
-  return c.json({ id: mailboxId, name, address: `${name}@${domain.name}` }, 201);
+  return c.json(
+    { id: mailboxId, name, displayName, address: `${name}@${domain.name}` },
+    201,
+  );
 });
 
 // Delete a mailbox — only if it holds no messages and isn't the catch-all

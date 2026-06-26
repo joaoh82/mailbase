@@ -11,6 +11,7 @@ import {
   messageLabels,
   messages,
   type MessageFolder,
+  sanitizeDisplayName,
   sanitizeOutboundHtml,
   users,
 } from "@mailbase/shared";
@@ -41,6 +42,7 @@ mailboxRoutes.get("/", async (c) => {
     .select({
       id: mailboxes.id,
       name: mailboxes.name,
+      displayName: mailboxes.displayName,
       domain: domains.name,
       role: mailboxMembers.role,
       signature: mailboxes.signature,
@@ -83,6 +85,7 @@ mailboxRoutes.get("/", async (c) => {
       address: `${r.name}@${r.domain}`,
       role: r.role,
       unread: unreadByMailbox.get(r.id) ?? 0,
+      displayName: r.displayName,
       signature: r.signature,
     })),
   });
@@ -159,6 +162,36 @@ mailboxRoutes.patch("/:mailboxId/signature", async (c) => {
     .set({ signature })
     .where(eq(mailboxes.id, mailboxId));
   return c.json({ signature });
+});
+
+// Update a mailbox's display name — the From name on its outbound mail (MAIL-22,
+// "mailbox name wins"). Because it changes how mail appears from every member of
+// a shared inbox, only an owner/admin may set it (unlike the signature, which
+// any member may edit). Sanitized to a well-formed header phrase; '' is allowed
+// and reverts the From to each sender's own identity name. Scoped by mailbox
+// membership, never by assuming a single mailbox (multi-domain invariant).
+mailboxRoutes.patch("/:mailboxId/display-name", async (c) => {
+  const db = drizzle(c.env.DB);
+  const user = c.get("user");
+  const mailboxId = c.req.param("mailboxId");
+  if (!(await canManageMailbox(db, user, mailboxId))) {
+    return c.json({ error: "You cannot manage this mailbox" }, 403);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  if (typeof body?.displayName !== "string") {
+    return c.json({ error: "displayName must be a string" }, 400);
+  }
+  const displayName = sanitizeDisplayName(body.displayName);
+
+  await db
+    .update(mailboxes)
+    .set({ displayName })
+    .where(eq(mailboxes.id, mailboxId));
+  return c.json({ displayName });
 });
 
 // Unified "all inboxes" view (Phase 5): one folder across every mailbox the

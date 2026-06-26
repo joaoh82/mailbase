@@ -71,11 +71,14 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   expiring URLs.
 - **Send via Resend.** A rich-text composer (bold, italic, bullet & numbered lists,
   headings, links) that sends real HTML email with a plaintext fallback, plus reply /
-  reply-all / forward with quoting, and attachments. **Signatures** are auto-appended to
-  outgoing mail — set one per send-as address, with a per-mailbox default as fallback;
-  switching the From address swaps the signature in place. Outbound HTML is sanitized to a
-  safe allowlist on the way out. Sent mail goes out behind the `MailSender` interface, lands
-  in a Sent folder, threads correctly, and bounces/complaints are flagged via webhooks.
+  reply-all / forward with quoting, and attachments. Each mailbox has a **From name** (e.g.
+  `Painel News <support@…>`) that goes out on its mail for every member who sends from it —
+  set it when creating the mailbox, edit it later from the mailbox's Manage dialog.
+  **Signatures** are auto-appended to outgoing mail — set one per send-as address, with a
+  per-mailbox default as fallback; switching the From address swaps the signature in place.
+  Outbound HTML is sanitized to a safe allowlist on the way out. Sent mail goes out behind
+  the `MailSender` interface, lands in a Sent folder, threads correctly, and
+  bounces/complaints are flagged via webhooks.
 - **Multiple users & shared inboxes.** `owner` / `member` roles, per-user send-as
   enforcement (you can only send from addresses you belong to), an account switcher, and
   one-time **invite links** to onboard new accounts.

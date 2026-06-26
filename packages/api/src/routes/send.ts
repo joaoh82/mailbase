@@ -39,6 +39,7 @@ sendRoutes.get("/identities", async (c) => {
     .select({
       id: identities.id,
       displayName: identities.displayName,
+      mailboxDisplayName: mailboxes.displayName,
       localPart: addresses.localPart,
       domain: domains.name,
       mailboxId: addresses.mailboxId,
@@ -58,6 +59,7 @@ sendRoutes.get("/identities", async (c) => {
       id: r.id,
       address: `${r.localPart}@${r.domain}`,
       displayName: r.displayName,
+      mailboxDisplayName: r.mailboxDisplayName,
       mailboxId: r.mailboxId,
       signature: r.signature,
       mailboxSignature: r.mailboxSignature,
@@ -166,6 +168,7 @@ sendRoutes.post("/", async (c) => {
   const identity = await db
     .select({
       displayName: identities.displayName,
+      mailboxDisplayName: mailboxes.displayName,
       localPart: addresses.localPart,
       mailboxId: addresses.mailboxId,
       domain: domains.name,
@@ -173,6 +176,7 @@ sendRoutes.post("/", async (c) => {
     .from(identities)
     .innerJoin(addresses, eq(addresses.id, identities.addressId))
     .innerJoin(domains, eq(domains.id, addresses.domainId))
+    .innerJoin(mailboxes, eq(mailboxes.id, addresses.mailboxId))
     .where(and(eq(identities.id, identityId), eq(identities.userId, user.id)))
     .get();
   if (!identity) {
@@ -180,8 +184,12 @@ sendRoutes.post("/", async (c) => {
   }
 
   const fromEmail = `${identity.localPart}@${identity.domain}`;
-  const fromHeader = identity.displayName
-    ? `${identity.displayName} <${fromEmail}>`
+  // Mailbox name wins (MAIL-22): a shared inbox's display name is the From name
+  // for every member; the sender's own identity name is only the fallback when
+  // the mailbox has none.
+  const fromDisplayName = identity.mailboxDisplayName || identity.displayName;
+  const fromHeader = fromDisplayName
+    ? `${fromDisplayName} <${fromEmail}>`
     : fromEmail;
   const sentMailboxId = identity.mailboxId;
 

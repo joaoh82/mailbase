@@ -2,6 +2,7 @@ import { SELF } from "cloudflare:test";
 import {
   base64ToBytes,
   hmacSha256Base64,
+  mailboxes,
   messages,
 } from "@mailbase/shared";
 import { eq } from "drizzle-orm";
@@ -51,11 +52,24 @@ describe("identities", () => {
         id: "idn-josh",
         address: "josh@testdomain.com",
         displayName: "Josh",
+        mailboxDisplayName: "",
         mailboxId: "mbx-josh",
         signature: "",
         mailboxSignature: "",
       },
     ]);
+  });
+
+  it("exposes the owning mailbox's From name for the composer", async () => {
+    await db
+      .update(mailboxes)
+      .set({ displayName: "Painel News" })
+      .where(eq(mailboxes.id, "mbx-josh"));
+    const res = await get("/api/send/identities");
+    const body = (await res.json()) as {
+      identities: { mailboxDisplayName: string }[];
+    };
+    expect(body.identities[0]?.mailboxDisplayName).toBe("Painel News");
   });
 });
 
@@ -95,6 +109,26 @@ describe("sending", () => {
     const search = await get("/api/mailboxes/mbx-josh/search?q=wakanda");
     const found = (await search.json()) as { messages: { id: string }[] };
     expect(found.messages.map((m) => m.id)).toContain(message.id);
+  });
+
+  it("uses the mailbox's From name over the sender's identity name (MAIL-22)", async () => {
+    // The shared inbox has a display name; the sender's own identity is "Josh".
+    await db
+      .update(mailboxes)
+      .set({ displayName: "Painel News" })
+      .where(eq(mailboxes.id, "mbx-josh"));
+
+    const res = await post("/api/send", {
+      identityId: "idn-josh",
+      to: ["friend@gmail.com"],
+      subject: "Shared inbox",
+      text: "Body",
+    });
+    expect(res.status).toBe(201);
+    const { message } = (await res.json()) as { message: { id: string } };
+    const raw = await rawOf(message.id);
+    expect(raw).toContain("From: Painel News <josh@testdomain.com>");
+    expect(raw).not.toContain("From: Josh <josh@testdomain.com>");
   });
 
   it("sends an HTML body as sanitized multipart/alternative with a text fallback", async () => {

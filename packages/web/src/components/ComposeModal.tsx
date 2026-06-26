@@ -183,13 +183,15 @@ export function ComposeModal({
                 value={identityId}
                 onChange={(e) => handleIdentityChange(e.target.value)}
               >
-                {identities.map((id) => (
-                  <option key={id.id} value={id.id}>
-                    {id.displayName
-                      ? `${id.displayName} <${id.address}>`
-                      : id.address}
-                  </option>
-                ))}
+                {identities.map((id) => {
+                  // Mailbox name wins (MAIL-22): the From the recipient sees.
+                  const fromName = id.mailboxDisplayName || id.displayName;
+                  return (
+                    <option key={id.id} value={id.id}>
+                      {fromName ? `${fromName} <${id.address}>` : id.address}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           )}

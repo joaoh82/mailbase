@@ -76,7 +76,7 @@ describe("read scoping", () => {
     };
     // msg-foreign is a seeded unread inbox message in mbx-other.
     expect(body.mailboxes).toEqual([
-      { id: "mbx-other", name: "other", domain: "testdomain.com", address: "other@testdomain.com", role: "owner", unread: 1, signature: "" },
+      { id: "mbx-other", name: "other", domain: "testdomain.com", address: "other@testdomain.com", role: "owner", unread: 1, displayName: "", signature: "" },
     ]);
   });
 });

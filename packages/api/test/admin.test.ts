@@ -145,11 +145,15 @@ describe("manage mailboxes, addresses and catch-all policy", () => {
     const mb = await send(
       "POST",
       `/api/admin/domains/${domainId}/mailboxes`,
-      { name: "support" },
+      { name: "support", displayName: "Support Team" },
       josh,
     );
     expect(mb.status).toBe(201);
-    const { id: supportMailboxId } = (await mb.json()) as { id: string };
+    const { id: supportMailboxId, displayName } = (await mb.json()) as {
+      id: string;
+      displayName: string;
+    };
+    expect(displayName).toBe("Support Team");
 
     // Alias help@ on the same mailbox.
     const alias = await send(
@@ -189,7 +193,7 @@ describe("manage mailboxes, addresses and catch-all policy", () => {
     const mb = await send(
       "POST",
       `/api/admin/domains/${domainId}/mailboxes`,
-      { name: "support" },
+      { name: "support", displayName: "Support Team" },
       josh,
     );
     const { id: mailboxId } = (await mb.json()) as { id: string };
@@ -275,7 +279,7 @@ describe("manage mailboxes, addresses and catch-all policy", () => {
     const mb = await send(
       "POST",
       `/api/admin/domains/${domainId}/mailboxes`,
-      { name: "temp" },
+      { name: "temp", displayName: "Temp" },
       josh,
     );
     const { id: tempId } = (await mb.json()) as { id: string };
@@ -284,6 +288,56 @@ describe("manage mailboxes, addresses and catch-all policy", () => {
     ).toBe(200);
     const gone = await db.select().from(mailboxes).where(eq(mailboxes.id, tempId)).get();
     expect(gone).toBeUndefined();
+  });
+
+  it("requires a From display name when creating a mailbox (MAIL-22)", async () => {
+    await makeJoshAdmin();
+    const josh = await login();
+    const res = await send(
+      "POST",
+      "/api/admin/domains/dom-test/mailboxes",
+      { name: "noname" },
+      josh,
+    );
+    expect(res.status).toBe(400);
+    // Whitespace-only is rejected too (sanitized to '').
+    const blank = await send(
+      "POST",
+      "/api/admin/domains/dom-test/mailboxes",
+      { name: "noname", displayName: "   " },
+      josh,
+    );
+    expect(blank.status).toBe(400);
+  });
+
+  it("lets an owner edit a mailbox From name; a non-member cannot (MAIL-22)", async () => {
+    const josh = await login(); // owner of mbx-josh (not a global admin)
+    const ok = await send(
+      "PATCH",
+      "/api/mailboxes/mbx-josh/display-name",
+      { displayName: "  Painel <News>  " },
+      josh,
+    );
+    expect(ok.status).toBe(200);
+    const { displayName } = (await ok.json()) as { displayName: string };
+    // Sanitized: trimmed, angle brackets stripped, whitespace collapsed.
+    expect(displayName).toBe("Painel News");
+    const row = await db
+      .select()
+      .from(mailboxes)
+      .where(eq(mailboxes.id, "mbx-josh"))
+      .get();
+    expect(row!.displayName).toBe("Painel News");
+
+    // A user who neither owns nor admins this mailbox is refused.
+    const other = await login("other@login.test");
+    const denied = await send(
+      "PATCH",
+      "/api/mailboxes/mbx-josh/display-name",
+      { displayName: "Hijack" },
+      other,
+    );
+    expect(denied.status).toBe(403);
   });
 });
 

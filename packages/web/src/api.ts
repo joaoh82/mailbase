@@ -14,6 +14,8 @@ export type MailboxRole = "owner" | "member";
 export interface Mailbox {
   id: string;
   name: string;
+  /** From name on this mailbox's outbound mail; '' falls back to the sender's. */
+  displayName: string;
   domain: string;
   address: string;
   role: MailboxRole;
@@ -282,6 +284,12 @@ export interface Identity {
   id: string;
   address: string;
   displayName: string;
+  /**
+   * The owning mailbox's From name. It WINS over this identity's displayName on
+   * send (MAIL-22), so the composer shows it as the effective From; '' falls
+   * back to displayName.
+   */
+  mailboxDisplayName: string;
   mailboxId: string;
   /** This identity's own signature (HTML); '' falls back to the mailbox's. */
   signature: string;
@@ -312,6 +320,20 @@ export function updateMailboxSignature(
   return request(`/api/mailboxes/${mailboxId}/signature`, {
     method: "PATCH",
     body: JSON.stringify({ signature }),
+  });
+}
+
+/**
+ * Update a mailbox's From display name (owner/admin only; sanitized
+ * server-side). '' reverts the From to each sender's own identity name.
+ */
+export function updateMailboxDisplayName(
+  mailboxId: string,
+  displayName: string,
+): Promise<{ displayName: string }> {
+  return request(`/api/mailboxes/${mailboxId}/display-name`, {
+    method: "PATCH",
+    body: JSON.stringify({ displayName }),
   });
 }
 
@@ -487,6 +509,8 @@ export interface AddDomainResult {
 export interface DomainMailbox {
   id: string;
   name: string;
+  /** From name on this mailbox's outbound mail (MAIL-22). */
+  displayName: string;
   address: string;
   addresses: { id: string; localPart: string; address: string }[];
 }
@@ -580,10 +604,11 @@ export function setDomainPolicy(
 export function addDomainMailbox(
   id: string,
   name: string,
-): Promise<{ id: string; name: string; address: string }> {
+  displayName: string,
+): Promise<{ id: string; name: string; displayName: string; address: string }> {
   return request(`/api/admin/domains/${id}/mailboxes`, {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, displayName }),
   });
 }
 
