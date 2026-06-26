@@ -4,6 +4,7 @@ import type { AppEnv } from "./lib/context";
 import { adminRoutes } from "./routes/admin";
 import { attachmentRoutes } from "./routes/attachments";
 import { authRoutes } from "./routes/auth";
+import { calendarRoutes, eventRoutes } from "./routes/calendar";
 import { inviteRoutes, publicInviteRoutes } from "./routes/invites";
 import { labelRoutes } from "./routes/labels";
 import { mailboxRoutes } from "./routes/mailboxes";
@@ -34,6 +35,8 @@ api.route("/mailboxes", mailboxRoutes);
 api.route("/messages", messageRoutes);
 api.route("/labels", labelRoutes);
 api.route("/threads", threadRoutes);
+api.route("/calendar", calendarRoutes);
+api.route("/events", eventRoutes);
 api.route("/send", sendRoutes);
 api.route("/invites", inviteRoutes);
 // Domain administration (Phase 5): a further requireAdmin gate, so only global
