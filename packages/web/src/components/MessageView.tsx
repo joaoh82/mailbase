@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Archive,
+  CalendarDays,
   Check,
   Download,
   Forward,
@@ -19,15 +20,19 @@ import {
 import { useEffect, useState } from "react";
 import {
   applyLabel,
-  fetchMessageFull,
   type AttachmentMeta,
+  type CalendarEvent,
+  fetchMessageFull,
+  getMessageEvent,
   type Label,
   listLabels,
   type MessageDetail,
   mintAttachmentUrl,
   removeLabel,
+  rsvpEvent,
 } from "../api";
 import { buildEmailSrcdoc, EMAIL_IFRAME_SANDBOX } from "../email-html";
+import { formatEventTime, PARTSTAT_LABELS } from "../lib/calendar";
 import type { EmailBgMode } from "../lib/preferences";
 import { cn } from "../lib/utils";
 import { DEFAULT_LABEL_COLOR, LabelChip } from "./LabelChip";
@@ -325,6 +330,8 @@ export function MessageView({
         </div>
       )}
 
+      <InviteCard message={message} />
+
       <MessageBody message={message} bgMode={emailBgMode} />
 
       {message.attachments.length > 0 && (
@@ -339,6 +346,121 @@ export function MessageView({
         </footer>
       )}
     </article>
+  );
+}
+
+const RSVP_CHOICES: { value: "accepted" | "tentative" | "declined"; label: string }[] = [
+  { value: "accepted", label: "Accept" },
+  { value: "tentative", label: "Maybe" },
+  { value: "declined", label: "Decline" },
+];
+
+// Reading-pane meeting invite (MAIL-29). Fetches the event a message carries (if
+// any) and lets the user Accept / Tentative / Decline; the response sends a REPLY
+// to the organizer and records the new status. Renders nothing for plain mail.
+function InviteCard({ message }: { message: MessageDetail }) {
+  const [event, setEvent] = useState<CalendarEvent | null>(null);
+  const [myStatus, setMyStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setEvent(null);
+    getMessageEvent(message.id)
+      .then(({ event }) => {
+        if (!active) return;
+        setEvent(event);
+        setMyStatus(event?.attendees.find((a) => a.isSelf)?.partstat ?? null);
+      })
+      .catch(() => {
+        // No card if the lookup fails; the message still renders.
+      });
+    return () => {
+      active = false;
+    };
+  }, [message.id]);
+
+  if (!event) return null;
+
+  const cancelled = event.status === "cancelled";
+  const self = event.attendees.find((a) => a.isSelf);
+  const dateLabel = new Date(event.startsAt).toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(event.allDay ? { timeZone: "UTC" } : {}),
+  });
+
+  async function respond(partstat: "accepted" | "tentative" | "declined") {
+    if (!event) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await rsvpEvent(event.id, partstat);
+      setMyStatus(res.partstat);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send your response");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-slate-800 bg-slate-900/80 px-4 py-3">
+      <div className="flex items-start gap-2">
+        <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              "text-sm font-medium",
+              cancelled ? "text-slate-400 line-through" : "text-slate-100",
+            )}
+          >
+            {event.summary || "(no title)"}
+          </p>
+          <p className="text-xs text-slate-400">
+            {dateLabel} · {formatEventTime(event)}
+          </p>
+          {event.location && (
+            <p className="truncate text-xs text-slate-500">{event.location}</p>
+          )}
+          {event.rrule && (
+            <p className="text-xs text-slate-500">Recurring</p>
+          )}
+
+          {cancelled ? (
+            <p className="mt-2 text-xs font-medium text-red-400">
+              This event was cancelled.
+            </p>
+          ) : self ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {RSVP_CHOICES.map((choice) => (
+                <Button
+                  key={choice.value}
+                  variant={myStatus === choice.value ? "default" : "outline"}
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => respond(choice.value)}
+                >
+                  {choice.label}
+                </Button>
+              ))}
+              {myStatus && (
+                <span className="ml-1 text-xs text-slate-400">
+                  You responded: {PARTSTAT_LABELS[myStatus] ?? myStatus}
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">
+              You are not an attendee of this invite.
+            </p>
+          )}
+          {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 
