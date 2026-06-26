@@ -1,6 +1,11 @@
 import { X } from "lucide-react";
 import { useState } from "react";
-import { createCalendarEvent, type Mailbox } from "../api";
+import {
+  type CalendarEvent,
+  createCalendarEvent,
+  type Mailbox,
+  updateCalendarEvent,
+} from "../api";
 import {
   dateInputToIso,
   isEmail,
@@ -22,37 +27,61 @@ function todayDate(): string {
   return isoToLocalInput(new Date().toISOString()).slice(0, 10);
 }
 
-// "New event" composer (MAIL-31). Organize an invite from one of your mailboxes
-// and send a REQUEST to the attendees via POST /api/calendar/events. Lives in
-// the lazy calendar chunk, so it stays out of the initial bundle.
+// Event composer (MAIL-31 / MAIL-33). Organize a new invite, or — when
+// `editEvent` is passed — edit an existing one you organize and re-send. Posts
+// to /api/calendar/events (POST to create, PATCH to update). Lives in the lazy
+// calendar chunk, so it stays out of the initial bundle.
 export function NewEventModal({
   mailboxes,
   defaultMailboxId,
+  editEvent,
   onClose,
   onCreated,
 }: {
   mailboxes: Mailbox[];
   defaultMailboxId?: string;
+  /** When set, the modal edits this event (PATCH) instead of creating one. */
+  editEvent?: CalendarEvent;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const isEdit = Boolean(editEvent);
   const [mailboxId, setMailboxId] = useState(
-    defaultMailboxId ?? mailboxes[0]?.id ?? "",
+    editEvent?.mailboxId ?? defaultMailboxId ?? mailboxes[0]?.id ?? "",
   );
-  const [summary, setSummary] = useState("");
-  const [allDay, setAllDay] = useState(false);
+  const [summary, setSummary] = useState(editEvent?.summary ?? "");
+  const [allDay, setAllDay] = useState(editEvent?.allDay ?? false);
   const start = roundedNextHour();
   const [startLocal, setStartLocal] = useState(() =>
-    isoToLocalInput(start.toISOString()),
+    editEvent && !editEvent.allDay
+      ? isoToLocalInput(editEvent.startsAt)
+      : isoToLocalInput(start.toISOString()),
   );
   const [endLocal, setEndLocal] = useState(() =>
-    isoToLocalInput(new Date(start.getTime() + 3_600_000).toISOString()),
+    editEvent && !editEvent.allDay
+      ? editEvent.endsAt
+        ? isoToLocalInput(editEvent.endsAt)
+        : ""
+      : isoToLocalInput(new Date(start.getTime() + 3_600_000).toISOString()),
   );
-  const [startDate, setStartDate] = useState(todayDate);
-  const [endDate, setEndDate] = useState(todayDate);
-  const [location, setLocation] = useState("");
-  const [attendeesText, setAttendeesText] = useState("");
-  const [description, setDescription] = useState("");
+  const [startDate, setStartDate] = useState(() =>
+    editEvent?.allDay ? editEvent.startsAt.slice(0, 10) : todayDate(),
+  );
+  const [endDate, setEndDate] = useState(() =>
+    editEvent?.allDay && editEvent.endsAt
+      ? editEvent.endsAt.slice(0, 10)
+      : todayDate(),
+  );
+  const [location, setLocation] = useState(editEvent?.location ?? "");
+  const [attendeesText, setAttendeesText] = useState(() =>
+    editEvent
+      ? editEvent.attendees
+          .filter((a) => !a.isSelf)
+          .map((a) => a.addr)
+          .join(", ")
+      : "",
+  );
+  const [description, setDescription] = useState(editEvent?.description ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,25 +108,32 @@ export function NewEventModal({
       if (!startsAt) return setError("Choose a start time.");
     }
 
+    const fields = {
+      summary: trimmedSummary,
+      startsAt,
+      endsAt,
+      allDay,
+      tzid: allDay ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      location: location.trim(),
+      description: description.trim(),
+      attendees,
+    };
+
     setSubmitting(true);
     try {
-      await createCalendarEvent({
-        mailboxId,
-        summary: trimmedSummary,
-        startsAt,
-        endsAt,
-        allDay,
-        tzid: allDay
-          ? ""
-          : Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-        location: location.trim(),
-        description: description.trim(),
-        attendees,
-      });
+      if (editEvent) {
+        await updateCalendarEvent(editEvent.id, fields);
+      } else {
+        await createCalendarEvent({ mailboxId, ...fields });
+      }
       onCreated();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create the event.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : `Could not ${isEdit ? "update" : "create"} the event.`,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -107,7 +143,9 @@ export function NewEventModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-slate-700 bg-slate-900">
         <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-100">New event</h2>
+          <h2 className="text-sm font-semibold text-slate-100">
+            {isEdit ? "Edit event" : "New event"}
+          </h2>
           <button
             aria-label="Close"
             onClick={onClose}
@@ -118,23 +156,33 @@ export function NewEventModal({
         </header>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-          {mailboxes.length > 1 && (
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-400">
-                Organize as
+          {isEdit ? (
+            <p className="text-xs text-slate-500">
+              Organized as{" "}
+              <span className="text-slate-300">
+                {mailboxes.find((m) => m.id === mailboxId)?.address ??
+                  editEvent?.organizerAddr}
               </span>
-              <select
-                className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-100"
-                value={mailboxId}
-                onChange={(e) => setMailboxId(e.target.value)}
-              >
-                {mailboxes.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.address}
-                  </option>
-                ))}
-              </select>
-            </label>
+            </p>
+          ) : (
+            mailboxes.length > 1 && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-400">
+                  Organize as
+                </span>
+                <select
+                  className="h-9 w-full rounded-md border border-slate-700 bg-slate-900 px-2 text-sm text-slate-100"
+                  value={mailboxId}
+                  onChange={(e) => setMailboxId(e.target.value)}
+                >
+                  {mailboxes.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.address}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
           )}
 
           <label className="block">
@@ -239,7 +287,13 @@ export function NewEventModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={submitting}>
-            {submitting ? "Sending…" : "Send invite"}
+            {submitting
+              ? isEdit
+                ? "Saving…"
+                : "Sending…"
+              : isEdit
+                ? "Save & resend"
+                : "Send invite"}
           </Button>
         </footer>
       </div>

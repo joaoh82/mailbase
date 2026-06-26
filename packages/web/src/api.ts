@@ -382,6 +382,22 @@ export function createCalendarEvent(
   });
 }
 
+/** Edit an organized event: bump SEQUENCE and re-send the REQUEST (MAIL-30/33). */
+export function updateCalendarEvent(
+  id: string,
+  input: Omit<CreateEventInput, "mailboxId">,
+): Promise<{ event: CalendarEvent }> {
+  return request(`/api/calendar/events/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Cancel an organized event: send a CANCEL and mark it cancelled (MAIL-30/33). */
+export function cancelCalendarEvent(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/calendar/events/${id}`, { method: "DELETE" });
+}
+
 export interface Identity {
   id: string;
   address: string;
