@@ -176,6 +176,15 @@ export function dateInputToIso(value: string): string | null {
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
+/** True when the viewer organizes this event (their own attendee line is the
+ *  organizer) — gates the Edit / Cancel actions, mirroring the API's check. */
+export function isOrganizer(event: CalendarEvent): boolean {
+  return (
+    event.organizerAddr !== "" &&
+    event.attendees.some((a) => a.isSelf && a.addr === event.organizerAddr)
+  );
+}
+
 /** An ISO instant → the `datetime-local` value for the viewer's local zone. */
 export function isoToLocalInput(iso: string): string {
   const d = new Date(iso);

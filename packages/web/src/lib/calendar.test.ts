@@ -7,6 +7,7 @@ import {
   eventsByDay,
   formatEventTime,
   isEmail,
+  isOrganizer,
   isoToLocalInput,
   localDayKey,
   localInputToIso,
@@ -179,5 +180,46 @@ describe("composer helpers", () => {
     const iso = "2026-07-15T13:00:00.000Z";
     expect(localInputToIso(isoToLocalInput(iso))).toBe(iso);
     expect(localInputToIso("")).toBeNull();
+  });
+
+  it("detects whether the viewer organizes an event", () => {
+    const attendee = (addr: string, isSelf: boolean) => ({
+      addr,
+      displayName: "",
+      partstat: "needs-action",
+      role: "",
+      isSelf,
+    });
+    // We are the organizer: our self line is the organizer address.
+    expect(
+      isOrganizer(
+        ev({
+          id: "a",
+          startsAt: "2026-07-15T13:00:00Z",
+          organizerAddr: "josh@x.com",
+          attendees: [
+            attendee("josh@x.com", true),
+            attendee("alice@y.com", false),
+          ],
+        }),
+      ),
+    ).toBe(true);
+    // We're just an invitee (self line ≠ organizer).
+    expect(
+      isOrganizer(
+        ev({
+          id: "b",
+          startsAt: "2026-07-15T13:00:00Z",
+          organizerAddr: "alice@y.com",
+          attendees: [attendee("josh@x.com", true)],
+        }),
+      ),
+    ).toBe(false);
+    // No self attendee at all.
+    expect(
+      isOrganizer(
+        ev({ id: "c", startsAt: "2026-07-15T13:00:00Z", organizerAddr: "alice@y.com" }),
+      ),
+    ).toBe(false);
   });
 });

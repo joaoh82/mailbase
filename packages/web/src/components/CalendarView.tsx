@@ -1,7 +1,17 @@
-import { ChevronLeft, ChevronRight, MapPin, Plus, Users, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type CalendarEvent,
+  cancelCalendarEvent,
   listCalendarEvents,
   type Mailbox,
 } from "../api";
@@ -12,6 +22,7 @@ import {
   eventsByDay,
   eventDayKey,
   formatEventTime,
+  isOrganizer,
   localDayKey,
   monthMatrix,
   PARTSTAT_LABELS,
@@ -56,9 +67,28 @@ export function CalendarView({
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
   const [composing, setComposing] = useState(false);
-  // Bumped after creating an event to refetch the current period.
+  const [editing, setEditing] = useState<CalendarEvent | null>(null);
+  // Bumped after a create/edit/cancel to refetch the current period.
   const [reloadNonce, setReloadNonce] = useState(0);
   const loadSeq = useRef(0);
+
+  async function handleCancel(event: CalendarEvent) {
+    if (
+      !window.confirm(
+        `Cancel "${event.summary || "this event"}" and notify attendees?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await cancelCalendarEvent(event.id);
+      setSelected(null);
+      setReloadNonce((n) => n + 1);
+    } catch (e) {
+      if (isAuthError(e)) onAuthError();
+      else setError(e instanceof Error ? e.message : "Could not cancel the event.");
+    }
+  }
 
   const { from, to } = useMemo(() => periodRange(view, anchor), [view, anchor]);
 
@@ -175,7 +205,16 @@ export function CalendarView({
       </div>
 
       {selected && (
-        <EventDetail event={selected} onClose={() => setSelected(null)} />
+        <EventDetail
+          event={selected}
+          canManage={selected.status !== "cancelled" && isOrganizer(selected)}
+          onEdit={() => {
+            setEditing(selected);
+            setSelected(null);
+          }}
+          onCancel={() => handleCancel(selected)}
+          onClose={() => setSelected(null)}
+        />
       )}
 
       {composing && (
@@ -183,6 +222,15 @@ export function CalendarView({
           mailboxes={mailboxes}
           defaultMailboxId={mailboxId}
           onClose={() => setComposing(false)}
+          onCreated={() => setReloadNonce((n) => n + 1)}
+        />
+      )}
+
+      {editing && (
+        <NewEventModal
+          mailboxes={mailboxes}
+          editEvent={editing}
+          onClose={() => setEditing(null)}
           onCreated={() => setReloadNonce((n) => n + 1)}
         />
       )}
@@ -388,9 +436,16 @@ function Agenda({
 
 function EventDetail({
   event,
+  canManage,
+  onEdit,
+  onCancel,
   onClose,
 }: {
   event: CalendarEvent;
+  /** True when the viewer organizes this event — shows Edit / Cancel. */
+  canManage: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
   onClose: () => void;
 }) {
   const when = event.allDay
@@ -484,6 +539,22 @@ function EventDetail({
           <p className="mt-3 whitespace-pre-wrap break-words text-sm text-slate-300">
             {event.description}
           </p>
+        )}
+
+        {canManage && (
+          <div className="mt-4 flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-red-400 hover:text-red-300"
+              onClick={onCancel}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Cancel event
+            </Button>
+          </div>
         )}
       </div>
     </div>
