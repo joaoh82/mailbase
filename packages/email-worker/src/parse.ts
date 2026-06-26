@@ -1,9 +1,19 @@
+import {
+  parseICalendar,
+  type ParsedCalendarEvent,
+} from "@mailbase/shared/calendar";
 import PostalMime, { type Address, type Email } from "postal-mime";
 
 export interface ParsedAttachment {
   filename: string;
   mimeType: string;
   content: ArrayBuffer | Uint8Array | string;
+}
+
+export interface ParsedCalendar {
+  event: ParsedCalendarEvent;
+  /** The raw .ics text, stored verbatim in R2 as the event's source of truth. */
+  rawText: string;
 }
 
 export interface ParsedInbound {
@@ -17,6 +27,8 @@ export interface ParsedInbound {
   /** Ids named in References/In-Reply-To, without angle brackets. */
   referenceIds: string[];
   attachments: ParsedAttachment[];
+  /** A meeting invite carried as a text/calendar part, or null. */
+  calendar: ParsedCalendar | null;
 }
 
 /** Strip angle brackets so stored ids and referenced ids compare equal. */
@@ -58,6 +70,32 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+function attachmentContentToText(
+  content: ArrayBuffer | Uint8Array | string,
+): string {
+  if (typeof content === "string") return content;
+  return new TextDecoder().decode(content);
+}
+
+// A meeting invite arrives as a text/calendar part (inline, often also as an
+// invite.ics attachment); postal-mime surfaces both in `attachments`. Return the
+// first one that parses to a real VEVENT.
+function findCalendar(email: Email): ParsedCalendar | null {
+  for (const att of email.attachments ?? []) {
+    const mime = (att.mimeType || "").toLowerCase();
+    const name = (att.filename || "").toLowerCase();
+    const looksCalendar =
+      mime.startsWith("text/calendar") ||
+      mime === "application/ics" ||
+      name.endsWith(".ics");
+    if (!looksCalendar) continue;
+    const rawText = attachmentContentToText(att.content);
+    const event = parseICalendar(rawText);
+    if (event) return { event, rawText };
+  }
+  return null;
+}
+
 export async function parseInbound(
   rawBuffer: ArrayBuffer,
   envelope: { from: string; to: string },
@@ -97,5 +135,6 @@ export async function parseInbound(
       mimeType: att.mimeType || "application/octet-stream",
       content: att.content,
     })),
+    calendar: email ? findCalendar(email) : null,
   };
 }

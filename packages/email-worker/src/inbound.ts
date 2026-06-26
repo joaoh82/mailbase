@@ -2,6 +2,8 @@ import {
   addresses,
   attachments,
   domains,
+  eventAttendees,
+  events,
   messages,
   normalizeSubject,
   threads,
@@ -9,7 +11,7 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
-import { parseInbound } from "./parse";
+import { type ParsedCalendar, parseInbound } from "./parse";
 
 const SNIPPET_LENGTH = 160;
 
@@ -198,6 +200,128 @@ export async function handleInboundEmail(
     }
     throw error;
   }
+
+  // Meeting invite? Derive the calendar event from it. This is best-effort and
+  // runs only after the message is safely stored: the message must never be lost
+  // over a calendar problem, so any failure here is logged, not thrown.
+  if (parsed.calendar) {
+    try {
+      await storeCalendarEvent(db, env, {
+        domainName: domain.name,
+        mailboxId,
+        messageId,
+        calendar: parsed.calendar,
+      });
+    } catch (error) {
+      console.warn(
+        `Failed to store calendar event for message ${messageId}:`,
+        error,
+      );
+    }
+  }
+}
+
+// Upsert a calendar event from an inbound invite, keyed by (mailbox_id, uid).
+// REQUEST/CANCEL insert when new and replace when the incoming SEQUENCE is at
+// least the stored one (stale re-sends are ignored); a CANCEL flips status to
+// 'cancelled' (the parser normalizes that). A REPLY only updates the replying
+// attendee's PARTSTAT on an event we already hold — it never creates or replaces
+// one, since its VEVENT carries only the replier. The raw .ics is stored in R2
+// as the event's source of truth.
+async function storeCalendarEvent(
+  db: DrizzleD1Database,
+  env: Env,
+  args: {
+    domainName: string;
+    mailboxId: string;
+    messageId: string;
+    calendar: ParsedCalendar;
+  },
+): Promise<void> {
+  const { domainName, mailboxId, messageId } = args;
+  const { event, rawText } = args.calendar;
+  // Without a UID we can't reconcile updates/cancellations — skip.
+  if (event.uid === "") return;
+
+  const calendarKey = `calendar/${domainName}/${mailboxId}/${messageId}.ics`;
+  await env.MAIL_BUCKET.put(calendarKey, rawText, {
+    httpMetadata: { contentType: "text/calendar" },
+  });
+
+  const existing = await db
+    .select()
+    .from(events)
+    .where(and(eq(events.mailboxId, mailboxId), eq(events.uid, event.uid)))
+    .get();
+
+  if (event.method === "REPLY") {
+    const replier = event.attendees[0];
+    if (!existing || !replier) return;
+    await db
+      .update(eventAttendees)
+      .set({ partstat: replier.partstat })
+      .where(
+        and(
+          eq(eventAttendees.eventId, existing.id),
+          eq(eventAttendees.addr, replier.addr),
+        ),
+      );
+    return;
+  }
+
+  // Ignore a re-sent invite that is older than what we already have.
+  if (existing && event.sequence < existing.sequence) return;
+
+  // Mark the mailbox's own ATTENDEE line: any of this mailbox's addresses.
+  const mailboxAddrs = await db
+    .select({ localPart: addresses.localPart })
+    .from(addresses)
+    .where(eq(addresses.mailboxId, mailboxId))
+    .all();
+  const selfSet = new Set(
+    mailboxAddrs.map((a) => `${a.localPart}@${domainName}`.toLowerCase()),
+  );
+
+  const eventId = existing?.id ?? crypto.randomUUID();
+  const attendeeRows = event.attendees.map((a) => ({
+    eventId,
+    addr: a.addr,
+    displayName: a.displayName,
+    partstat: a.partstat,
+    role: a.role,
+    isSelf: selfSet.has(a.addr),
+  }));
+
+  const values = {
+    mailboxId,
+    messageId,
+    uid: event.uid,
+    sequence: event.sequence,
+    organizerAddr: event.organizerAddr,
+    summary: event.summary,
+    description: event.description,
+    location: event.location,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    allDay: event.allDay,
+    tzid: event.tzid,
+    status: event.status,
+    rrule: event.rrule,
+    method: event.method,
+    rawIcsR2Key: calendarKey,
+    updatedAt: new Date(),
+  };
+
+  const statements: BatchItem<"sqlite">[] = existing
+    ? [
+        db.update(events).set(values).where(eq(events.id, eventId)),
+        db.delete(eventAttendees).where(eq(eventAttendees.eventId, eventId)),
+      ]
+    : [db.insert(events).values({ id: eventId, ...values })];
+  if (attendeeRows.length > 0) {
+    statements.push(db.insert(eventAttendees).values(attendeeRows));
+  }
+  await db.batch(statements as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
 }
 
 function isDuplicateMessageError(error: unknown): boolean {

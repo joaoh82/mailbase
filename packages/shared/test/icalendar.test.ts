@@ -1,0 +1,203 @@
+import { describe, expect, it } from "vitest";
+import { parseICalendar } from "../src/icalendar";
+
+// Inline, standards-shaped iCalendar payloads. To harden the parser against a
+// real sender, paste its `text/calendar` part (Gmail "Show original" / "View
+// source") in as another constant and add a case below.
+
+const TIMEZONED_REQUEST = [
+  "BEGIN:VCALENDAR",
+  "PRODID:-//Google Inc//Google Calendar//EN",
+  "VERSION:2.0",
+  "METHOD:REQUEST",
+  "BEGIN:VTIMEZONE",
+  "TZID:America/New_York",
+  "BEGIN:DAYLIGHT",
+  "TZOFFSETFROM:-0500",
+  "TZOFFSETTO:-0400",
+  "TZNAME:EDT",
+  "DTSTART:19700308T020000",
+  "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
+  "END:DAYLIGHT",
+  "BEGIN:STANDARD",
+  "TZOFFSETFROM:-0400",
+  "TZOFFSETTO:-0500",
+  "TZNAME:EST",
+  "DTSTART:19701101T020000",
+  "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+  "BEGIN:VEVENT",
+  "DTSTART;TZID=America/New_York:20260715T090000",
+  "DTEND;TZID=America/New_York:20260715T093000",
+  "DTSTAMP:20260626T120000Z",
+  "ORGANIZER;CN=Alice Organizer:mailto:alice@gmail.com",
+  "UID:tz-event-001@google.com",
+  "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Josh:mailto:josh@example.com",
+  "ATTENDEE;PARTSTAT=ACCEPTED;CN=Alice Organizer:mailto:alice@gmail.com",
+  "SEQUENCE:0",
+  "STATUS:CONFIRMED",
+  "SUMMARY:Project sync",
+  "LOCATION:Conference Room A",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const ALL_DAY_REQUEST = [
+  "BEGIN:VCALENDAR",
+  "PRODID:-//Microsoft Corporation//Outlook//EN",
+  "VERSION:2.0",
+  "METHOD:REQUEST",
+  "BEGIN:VEVENT",
+  "DTSTART;VALUE=DATE:20260720",
+  "DTEND;VALUE=DATE:20260721",
+  "DTSTAMP:20260626T120000Z",
+  "ORGANIZER;CN=Bob Boss:mailto:bob@contoso.com",
+  "UID:allday-event-002@contoso.com",
+  "ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Josh:mailto:josh@example.com",
+  "SEQUENCE:0",
+  "SUMMARY:Company holiday",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const RECURRING_REQUEST = [
+  "BEGIN:VCALENDAR",
+  "PRODID:-//Apple Inc.//macOS//EN",
+  "VERSION:2.0",
+  "METHOD:REQUEST",
+  "BEGIN:VTIMEZONE",
+  "TZID:Europe/London",
+  "BEGIN:DAYLIGHT",
+  "TZOFFSETFROM:+0000",
+  "TZOFFSETTO:+0100",
+  "TZNAME:BST",
+  "DTSTART:19700329T010000",
+  "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+  "END:DAYLIGHT",
+  "BEGIN:STANDARD",
+  "TZOFFSETFROM:+0100",
+  "TZOFFSETTO:+0000",
+  "TZNAME:GMT",
+  "DTSTART:19701025T020000",
+  "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+  "BEGIN:VEVENT",
+  "DTSTART;TZID=Europe/London:20260706T100000",
+  "DTEND;TZID=Europe/London:20260706T103000",
+  "DTSTAMP:20260626T120000Z",
+  "ORGANIZER;CN=Carol Lead:mailto:carol@example.org",
+  "UID:recurring-event-003@example.org",
+  "ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Josh:mailto:josh@example.com",
+  "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10",
+  "SEQUENCE:0",
+  "SUMMARY:Monday standup",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const REPLY_ACCEPTED = [
+  "BEGIN:VCALENDAR",
+  "PRODID:-//Google Inc//Google Calendar//EN",
+  "VERSION:2.0",
+  "METHOD:REPLY",
+  "BEGIN:VEVENT",
+  "DTSTART;TZID=America/New_York:20260715T090000",
+  "DTSTAMP:20260626T130000Z",
+  "ORGANIZER;CN=Alice Organizer:mailto:alice@gmail.com",
+  "UID:tz-event-001@google.com",
+  "ATTENDEE;PARTSTAT=ACCEPTED;CN=Josh:mailto:josh@example.com",
+  "SEQUENCE:0",
+  "SUMMARY:Accepted: Project sync",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+const CANCEL = [
+  "BEGIN:VCALENDAR",
+  "PRODID:-//Google Inc//Google Calendar//EN",
+  "VERSION:2.0",
+  "METHOD:CANCEL",
+  "BEGIN:VEVENT",
+  "DTSTART:20260715T130000Z",
+  "DTSTAMP:20260626T140000Z",
+  "ORGANIZER;CN=Alice Organizer:mailto:alice@gmail.com",
+  "UID:tz-event-001@google.com",
+  "ATTENDEE;CN=Josh:mailto:josh@example.com",
+  "SEQUENCE:1",
+  "STATUS:CANCELLED",
+  "SUMMARY:Cancelled: Project sync",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+describe("parseICalendar", () => {
+  it("converts a TZID start time to the correct UTC instant", () => {
+    const event = parseICalendar(TIMEZONED_REQUEST)!;
+    expect(event).not.toBeNull();
+    expect(event.method).toBe("REQUEST");
+    expect(event.uid).toBe("tz-event-001@google.com");
+    expect(event.summary).toBe("Project sync");
+    expect(event.location).toBe("Conference Room A");
+    expect(event.organizerAddr).toBe("alice@gmail.com");
+    expect(event.allDay).toBe(false);
+    expect(event.tzid).toBe("America/New_York");
+    // 09:00 EDT (UTC-4) on 2026-07-15 -> 13:00 UTC.
+    expect(event.startsAt.toISOString()).toBe("2026-07-15T13:00:00.000Z");
+    expect(event.endsAt?.toISOString()).toBe("2026-07-15T13:30:00.000Z");
+    expect(event.status).toBe("confirmed");
+    expect(event.rrule).toBe("");
+  });
+
+  it("captures attendees with a normalized partstat", () => {
+    const event = parseICalendar(TIMEZONED_REQUEST)!;
+    const josh = event.attendees.find((a) => a.addr === "josh@example.com");
+    expect(josh).toBeDefined();
+    expect(josh!.partstat).toBe("needs-action");
+    expect(josh!.role).toBe("REQ-PARTICIPANT");
+    const alice = event.attendees.find((a) => a.addr === "alice@gmail.com");
+    expect(alice!.partstat).toBe("accepted");
+  });
+
+  it("stores all-day events date-only without a timezone shift", () => {
+    const event = parseICalendar(ALL_DAY_REQUEST)!;
+    expect(event.allDay).toBe(true);
+    expect(event.tzid).toBe("");
+    expect(event.startsAt.toISOString()).toBe("2026-07-20T00:00:00.000Z");
+    expect(event.endsAt?.toISOString()).toBe("2026-07-21T00:00:00.000Z");
+    expect(event.summary).toBe("Company holiday");
+  });
+
+  it("keeps the raw RRULE for recurring events without expanding it", () => {
+    const event = parseICalendar(RECURRING_REQUEST)!;
+    expect(event.rrule).toContain("FREQ=WEEKLY");
+    expect(event.tzid).toBe("Europe/London");
+    // 10:00 BST (UTC+1) on 2026-07-06 -> 09:00 UTC.
+    expect(event.startsAt.toISOString()).toBe("2026-07-06T09:00:00.000Z");
+  });
+
+  it("reads a REPLY's PARTSTAT", () => {
+    const event = parseICalendar(REPLY_ACCEPTED)!;
+    expect(event.method).toBe("REPLY");
+    expect(event.uid).toBe("tz-event-001@google.com");
+    expect(event.attendees[0]?.partstat).toBe("accepted");
+  });
+
+  it("marks a CANCEL as cancelled and carries the bumped sequence", () => {
+    const event = parseICalendar(CANCEL)!;
+    expect(event.method).toBe("CANCEL");
+    expect(event.status).toBe("cancelled");
+    expect(event.sequence).toBe(1);
+    expect(event.uid).toBe("tz-event-001@google.com");
+  });
+
+  it("returns null on malformed or non-calendar input", () => {
+    expect(parseICalendar("this is not a calendar")).toBeNull();
+    expect(parseICalendar("")).toBeNull();
+    // A VCALENDAR with no VEVENT.
+    expect(
+      parseICalendar("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"),
+    ).toBeNull();
+  });
+});

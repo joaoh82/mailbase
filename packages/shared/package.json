@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./html": "./src/outbound-html.ts"
+    "./html": "./src/outbound-html.ts",
+    "./calendar": "./src/icalendar.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.2.0",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "ical.js": "^2.2.1"
   }
 }
