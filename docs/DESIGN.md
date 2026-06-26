@@ -355,12 +355,14 @@ login needs the Workers Paid plan. Hard ceiling around $5–10/mo at much higher
 migrate real domains in 6.** Phases 1–3 give a usable single-user product fast; everything
 after is multiplying it out.
 
-### Phase 7 — Calendar (iCalendar / iMIP) — planned
+### Phase 7 — Calendar (iCalendar / iMIP) — shipped
 
 Receive, display, RSVP to, and send meeting invites by email, with a per-mailbox **Calendar**
-view in the webmail. Tracked as **MAIL-23** (umbrella) → MAIL-24…31. Layered onto the existing
+view in the webmail. Shipped as **MAIL-23** (umbrella) → MAIL-24…31. Layered onto the existing
 inbound→R2/D1→webmail pipeline; **no new Cloudflare products** — it reuses the Email Worker,
-D1, R2, the Hono API, the SPA, and the `MailSender`/Resend outbound path.
+D1, R2, the Hono API, the SPA, and the `MailSender`/Resend outbound path. The outbound side is
+implemented but its delivery to external calendars (Gmail/Outlook) awaits a one-time live-send
+verification — see the "Outbound iMIP constraint" note below.
 
 **Standards.** Email scheduling is **iMIP** (RFC 6047): an ordinary email carrying an
 **iCalendar** (RFC 5545) payload with a `METHOD` — `REQUEST` (invite), `REPLY` (RSVP),
