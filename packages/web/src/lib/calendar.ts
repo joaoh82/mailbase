@@ -145,3 +145,43 @@ export const PARTSTAT_LABELS: Record<string, string> = {
   tentative: "Maybe",
   declined: "Declined",
 };
+
+// --- Event composer helpers (MAIL-31) --------------------------------------
+
+/** Split an attendee field (commas / semicolons / whitespace) into addresses. */
+export function parseAttendeeList(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isEmail(value: string): boolean {
+  return EMAIL_RE.test(value);
+}
+
+/** A `datetime-local` value ("YYYY-MM-DDTHH:mm", local time) → ISO UTC. */
+export function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+/** A `date` input ("YYYY-MM-DD") → ISO at UTC midnight (all-day, never shifted). */
+export function dateInputToIso(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const ms = Date.parse(`${value}T00:00:00Z`);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+/** An ISO instant → the `datetime-local` value for the viewer's local zone. */
+export function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}

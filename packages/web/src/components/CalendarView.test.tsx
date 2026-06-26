@@ -11,6 +11,7 @@ describe("CalendarView", () => {
       <CalendarView
         mailboxId={undefined}
         mailboxLabel="All inboxes"
+        mailboxes={[]}
         onAuthError={() => {}}
       />
     );

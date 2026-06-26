@@ -359,6 +359,29 @@ export function rsvpEvent(
   });
 }
 
+export interface CreateEventInput {
+  mailboxId: string;
+  summary: string;
+  /** Start instant, ISO 8601. */
+  startsAt: string;
+  endsAt?: string | null;
+  allDay?: boolean;
+  tzid?: string;
+  location?: string;
+  description?: string;
+  attendees: string[];
+}
+
+/** Create an invite and send a REQUEST to its attendees (MAIL-30). */
+export function createCalendarEvent(
+  input: CreateEventInput,
+): Promise<{ event: CalendarEvent }> {
+  return request("/api/calendar/events", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export interface Identity {
   id: string;
   address: string;
