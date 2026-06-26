@@ -572,6 +572,7 @@ function MailboxManager({
   act: (key: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const [newMailbox, setNewMailbox] = useState("");
+  const [newMailboxDisplay, setNewMailboxDisplay] = useState("");
   const [aliasFor, setAliasFor] = useState<string | null>(null);
   const [alias, setAlias] = useState("");
   const id = detail.domain.id;
@@ -586,7 +587,18 @@ function MailboxManager({
             className="space-y-2 rounded-md border border-slate-800 bg-slate-800/40 p-3"
           >
             <div className="flex items-center gap-2">
-              <span className="flex-1 text-sm font-medium">{m.name}</span>
+              <span className="flex-1 text-sm font-medium">
+                {m.name}
+                {m.displayName ? (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    “{m.displayName}”
+                  </span>
+                ) : (
+                  <span className="ml-2 text-xs font-normal italic text-slate-500">
+                    no From name
+                  </span>
+                )}
+              </span>
               <button
                 title="Delete mailbox"
                 className="text-slate-500 hover:text-red-400"
@@ -672,19 +684,30 @@ function MailboxManager({
 
       <div className="flex gap-2">
         <Input
-          placeholder="new mailbox name"
+          placeholder="mailbox name (e.g. support)"
           value={newMailbox}
           onChange={(e) => setNewMailbox(e.target.value)}
+          className="flex-1"
+        />
+        <Input
+          placeholder="From name (e.g. Painel News)"
+          value={newMailboxDisplay}
+          onChange={(e) => setNewMailboxDisplay(e.target.value)}
           className="flex-1"
         />
         <Button
           size="sm"
           variant="ghost"
-          disabled={busy !== null || !newMailbox.trim()}
+          disabled={busy !== null || !newMailbox.trim() || !newMailboxDisplay.trim()}
           onClick={() =>
             act("add-mailbox", async () => {
-              await addDomainMailbox(id, newMailbox.trim());
+              await addDomainMailbox(
+                id,
+                newMailbox.trim(),
+                newMailboxDisplay.trim(),
+              );
               setNewMailbox("");
+              setNewMailboxDisplay("");
               onRefresh();
             })
           }
@@ -692,6 +715,11 @@ function MailboxManager({
           <Plus className="h-4 w-4" /> Add mailbox
         </Button>
       </div>
+      <p className="text-xs text-slate-500">
+        The From name appears on outgoing mail from this mailbox (e.g.{" "}
+        <span className="text-slate-400">Painel News &lt;support@…&gt;</span>) for
+        everyone who sends from it.
+      </p>
     </div>
   );
 }

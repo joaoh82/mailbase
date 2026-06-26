@@ -38,7 +38,9 @@ body on the classic white canvas, or blend it into the dark app theme.
 The `MailSender` interface with a Resend adapter (the only file allowed to import Resend).
 Compose, reply / reply-all / forward with quoting, attachment upload, a Sent folder,
 correct reply threading (`In-Reply-To` / `References`), and bounce/complaint flagging via
-Resend webhooks.
+Resend webhooks. Later added: per-identity and per-mailbox **signatures** (MAIL-4), and a
+per-mailbox **From name** (MAIL-22) — a shared inbox's display name that goes out on every
+member's mail (e.g. `Painel News <support@…>`) and wins over the sender's personal name.
 
 ### ✅ Phase 4 — Multi-account & permissions
 Shared inboxes, aliases, and `owner` / `member` roles, with every read scoped to the

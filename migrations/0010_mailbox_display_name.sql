@@ -1,0 +1,12 @@
+-- Migration 0010: per-mailbox display name, used as the From name on outbound
+-- mail (MAIL-22).
+--
+-- A mailbox's display_name is the human-friendly name that appears in the From
+-- header of mail sent from it (e.g. "Painel News <fale.conosco@…>"). It is the
+-- shared identity of a role/team inbox, so it WINS over the sender's personal
+-- per-identity display_name: every member's outbound mail goes out under the
+-- mailbox's name. When display_name is '' (legacy mailboxes, and the default
+-- mailbox created when a domain is added) the From falls back to the sending
+-- identity's own display_name, preserving the prior behaviour. Defaults to ''
+-- so existing rows are unaffected until a name is set.
+ALTER TABLE mailboxes ADD COLUMN display_name TEXT NOT NULL DEFAULT '';

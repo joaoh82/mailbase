@@ -120,7 +120,10 @@ domains          (id, name, catch_all_mailbox_id NULL, reject_unknown BOOL,
                   -- seeded by hand, which the UI labels "managed manually".
 users            (id, email_login, password_hash, display_name, is_admin, created_at)
 sessions         (id, user_id, token_hash, expires_at, created_at)
-mailboxes        (id, domain_id, name, signature, created_at) -- e.g. "josh", "support"
+mailboxes        (id, domain_id, name, display_name, signature, created_at) -- e.g. "josh", "support"
+                  -- display_name: From name on outbound mail (MAIL-22); it WINS over the
+                  --   sending identity's display_name, so a shared inbox sends under one
+                  --   name. '' falls back to the sender's own identity display_name.
                   -- signature: default HTML signature for the mailbox (Phase 3+/MAIL-4)
 addresses        (id, domain_id, local_part, mailbox_id)      -- josh@, j@, hello@ → one mailbox
 mailbox_members  (mailbox_id, user_id, role)                  -- shared inboxes; role ∈ {owner, member}
@@ -158,9 +161,17 @@ Access model (Phase 4): every mailbox/message/thread read is scoped to the calle
 `mailbox_members` rows — nothing outside your memberships is reachable. Sending is scoped to
 `identities` (you may only send from an address you have an identity for). Adding a member to a
 mailbox mints an identity for each of that mailbox's addresses, so shared-inbox members and
-aliases just work. `role` gates *management* (inviting users, adding/removing members): only a
-mailbox `owner` or a global `is_admin` user may manage a mailbox. New logins are onboarded via a
-one-time `invites` link; existing accounts are added to shared mailboxes directly.
+aliases just work. `role` gates *management* (inviting users, adding/removing members, and
+setting the mailbox `display_name`): only a mailbox `owner` or a global `is_admin` user may
+manage a mailbox. New logins are onboarded via a one-time `invites` link; existing accounts are
+added to shared mailboxes directly.
+
+From name on outbound mail (MAIL-22): the mailbox `display_name` is the shared identity of a
+role/team inbox and **wins** over the sender's per-identity `display_name`, so every member's
+mail goes out as `Display Name <addr@domain>` under one name. It is required when an admin
+creates a mailbox and editable by an owner afterwards; when it is `''` (the default mailbox a
+new domain ships with, and legacy rows) the From falls back to the sender's own identity name.
+The composer's From dropdown applies the same precedence so its preview matches what is sent.
 
 ---
 

@@ -79,6 +79,11 @@ export const mailboxes = sqliteTable(
       .notNull()
       .references(() => domains.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    // Human-friendly From name for outbound mail (migration 0010, MAIL-22): the
+    // shared identity of this inbox, e.g. "Painel News". It WINS over the
+    // sender's per-identity display_name, so every member sends under the
+    // mailbox's name. '' falls back to the sending identity's own display_name.
+    displayName: text("display_name").notNull().default(""),
     // Default signature (migration 0008): HTML appended to outgoing mail when a
     // sending identity in this mailbox has no signature of its own. '' = none.
     signature: text("signature").notNull().default(""),

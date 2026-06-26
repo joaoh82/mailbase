@@ -8,6 +8,7 @@ import {
   type MailboxMember,
   type MailboxRole,
   removeMember,
+  updateMailboxDisplayName,
   updateMailboxSignature,
 } from "../api";
 import { RichTextEditor } from "./RichTextEditor";
@@ -35,6 +36,9 @@ export function ManageMailboxModal({
   const [sigHtml, setSigHtml] = useState(mailbox.signature);
   const [sigBusy, setSigBusy] = useState(false);
   const [sigSaved, setSigSaved] = useState(false);
+  const [fromName, setFromName] = useState(mailbox.displayName);
+  const [nameBusy, setNameBusy] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
 
   const refresh = useCallback(() => {
     listMembers(mailbox.id)
@@ -85,6 +89,21 @@ export function ManageMailboxModal({
       refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }
+
+  async function handleSaveFromName() {
+    setNameBusy(true);
+    setNameSaved(false);
+    setError(null);
+    try {
+      const res = await updateMailboxDisplayName(mailbox.id, fromName.trim());
+      setFromName(res.displayName);
+      setNameSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setNameBusy(false);
     }
   }
 
@@ -199,6 +218,35 @@ export function ManageMailboxModal({
             />
           </div>
         )}
+
+        <div className="space-y-2 border-t border-slate-800 pt-4">
+          <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+            From name
+          </label>
+          <p className="text-xs text-slate-500">
+            Shown as the sender on mail from this mailbox — as{" "}
+            <span className="text-slate-400">
+              {(fromName.trim() || "Painel News") + " "}
+              &lt;{mailbox.address}&gt;
+            </span>{" "}
+            — for every member. Leave empty to use each sender's own name.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="e.g. Painel News"
+              value={fromName}
+              onChange={(e) => {
+                setFromName(e.target.value);
+                setNameSaved(false);
+              }}
+              className="flex-1"
+            />
+            {nameSaved && <span className="text-xs text-emerald-400">Saved</span>}
+            <Button size="sm" disabled={nameBusy} onClick={handleSaveFromName}>
+              {nameBusy ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
 
         <div className="space-y-2 border-t border-slate-800 pt-4">
           <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">

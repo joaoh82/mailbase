@@ -12,6 +12,7 @@ function identity(overrides: Partial<Identity>): Identity {
     id: "idn",
     address: "me@example.com",
     displayName: "Me",
+    mailboxDisplayName: "",
     mailboxId: "mbx",
     signature: "",
     mailboxSignature: "",
