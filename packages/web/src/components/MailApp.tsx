@@ -53,6 +53,11 @@ const SettingsModal = lazy(() =>
 const LabelsModal = lazy(() =>
   import("./LabelsModal").then((m) => ({ default: m.LabelsModal })),
 );
+// The Calendar surface (MAIL-28) is its own pane, lazy-loaded so its grid/agenda
+// code stays out of the initial bundle until the user opens Calendar.
+const CalendarView = lazy(() =>
+  import("./CalendarView").then((m) => ({ default: m.CalendarView })),
+);
 
 // Shared loading shell for the lazy modals above.
 function ModalFallback() {
@@ -94,6 +99,8 @@ export function MailApp({
   const [mailboxId, setMailboxId] = useState<string | null>(null);
   const [domainFilter, setDomainFilter] = useState<string>(ALL_DOMAINS);
   const [folder, setFolder] = useState<Folder>("inbox");
+  // Which main surface is showing: the mail three-pane or the Calendar (MAIL-28).
+  const [view, setView] = useState<"mail" | "calendar">("mail");
   const [activeQuery, setActiveQuery] = useState("");
   const [items, setItems] = useState<MessageListItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -449,6 +456,7 @@ export function MailApp({
     setFolder("inbox");
     setLabelFilter(labelId);
     setActiveQuery("");
+    setView("mail");
   }, []);
 
   // Apply / remove a label from the reading pane, mirroring the change onto the
@@ -598,6 +606,7 @@ export function MailApp({
         selectedMailboxId={mailboxId}
         folder={folder}
         searching={activeQuery !== ""}
+        calendarActive={view === "calendar"}
         canManage={Boolean(canManage && selectedMailbox)}
         totalUnread={totalUnread}
         labels={labels}
@@ -612,47 +621,71 @@ export function MailApp({
           setFolder(f);
           setActiveQuery("");
           setLabelFilter(null);
+          setView("mail");
         }}
         onSelectLabel={handleSelectLabel}
+        onOpenCalendar={() => setView("calendar")}
         onManageLabels={() => setLabelsManaging(true)}
         onManage={() => setManaging(true)}
         onOpenAdmin={() => setAdminOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onLogout={handleLogout}
       />
-      <MessageList
-        mailbox={selectedMailbox}
-        folder={folder}
-        items={items}
-        loading={loadingList}
-        hasMore={nextCursor !== null}
-        activeQuery={activeQuery}
-        activeLabelName={labels.find((l) => l.id === labelFilter)?.name}
-        selectedMessageId={selection?.messageId ?? null}
-        error={error}
-        allInboxes={isAll}
-        onSearch={(q) => {
-          setActiveQuery(q);
-          if (q) setLabelFilter(null);
-        }}
-        onRefresh={refreshList}
-        onLoadMore={loadMore}
-        onSelect={handleSelect}
-        onToggleStar={handleToggleStar}
-      />
-      <ThreadView
-        key={selection ? `${selection.threadId}:${selection.messageId}` : "none"}
-        selection={selection}
-        onAuthError={onSignedOut}
-        onToggleStar={handleToggleStar}
-        onSetRead={handleSetRead}
-        onMove={handleMove}
-        onReply={handleReply}
-        onApplyLabel={handleApplyLabel}
-        onRemoveLabel={handleRemoveLabel}
-        emailBgMode={emailBgMode}
-        onEmailBgModeChange={handleEmailBgModeChange}
-      />
+      {view === "calendar" ? (
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center bg-slate-950">
+              <p className="text-sm text-slate-400">Loading calendar…</p>
+            </div>
+          }
+        >
+          <CalendarView
+            mailboxId={isAll || !mailboxId ? undefined : mailboxId}
+            mailboxLabel={
+              isAll ? "All inboxes" : (selectedMailbox?.address ?? "Calendar")
+            }
+            onAuthError={onSignedOut}
+          />
+        </Suspense>
+      ) : (
+        <>
+          <MessageList
+            mailbox={selectedMailbox}
+            folder={folder}
+            items={items}
+            loading={loadingList}
+            hasMore={nextCursor !== null}
+            activeQuery={activeQuery}
+            activeLabelName={labels.find((l) => l.id === labelFilter)?.name}
+            selectedMessageId={selection?.messageId ?? null}
+            error={error}
+            allInboxes={isAll}
+            onSearch={(q) => {
+              setActiveQuery(q);
+              if (q) setLabelFilter(null);
+            }}
+            onRefresh={refreshList}
+            onLoadMore={loadMore}
+            onSelect={handleSelect}
+            onToggleStar={handleToggleStar}
+          />
+          <ThreadView
+            key={
+              selection ? `${selection.threadId}:${selection.messageId}` : "none"
+            }
+            selection={selection}
+            onAuthError={onSignedOut}
+            onToggleStar={handleToggleStar}
+            onSetRead={handleSetRead}
+            onMove={handleMove}
+            onReply={handleReply}
+            onApplyLabel={handleApplyLabel}
+            onRemoveLabel={handleRemoveLabel}
+            emailBgMode={emailBgMode}
+            onEmailBgModeChange={handleEmailBgModeChange}
+          />
+        </>
+      )}
       {compose && (
         <Suspense
           fallback={

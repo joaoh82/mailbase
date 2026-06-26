@@ -280,6 +280,67 @@ export function mintAttachmentUrl(
   return request(`/api/messages/${messageId}/attachments/${attachmentId}/url`);
 }
 
+// --- Calendar (Phase 7 / MAIL-27) ------------------------------------------
+
+export type Partstat =
+  | "needs-action"
+  | "accepted"
+  | "tentative"
+  | "declined"
+  | string;
+
+export interface CalendarAttendee {
+  addr: string;
+  displayName: string;
+  partstat: Partstat;
+  role: string;
+  /** True for the viewer's own attendee line. */
+  isSelf: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  mailboxId: string;
+  /** The message this invite arrived on, or null. */
+  messageId: string | null;
+  uid: string;
+  sequence: number;
+  method: string;
+  status: "confirmed" | "cancelled" | "tentative" | string;
+  summary: string;
+  description: string;
+  location: string;
+  organizerAddr: string;
+  /** Start instant, ISO 8601 (UTC). */
+  startsAt: string;
+  /** End instant ISO, or null when the invite carried no end. */
+  endsAt: string | null;
+  allDay: boolean;
+  tzid: string;
+  /** Raw RRULE value; '' when non-recurring. */
+  rrule: string;
+  attendees: CalendarAttendee[];
+}
+
+/**
+ * Events overlapping [fromIso, toIso]. Omit mailboxId for the unified "all
+ * inboxes" calendar; pass a specific mailbox id to scope to it. (Don't pass the
+ * "all" sentinel — the caller maps that to undefined.)
+ */
+export function listCalendarEvents(
+  fromIso: string,
+  toIso: string,
+  mailboxId?: string,
+): Promise<{ events: CalendarEvent[] }> {
+  const params = new URLSearchParams({ from: fromIso, to: toIso });
+  if (mailboxId) params.set("mailboxId", mailboxId);
+  return request(`/api/calendar/events?${params}`);
+}
+
+export function getCalendarEvent(id: string): Promise<{ event: CalendarEvent }> {
+  return request(`/api/events/${id}`);
+}
+
 export interface Identity {
   id: string;
   address: string;
