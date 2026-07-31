@@ -1,5 +1,11 @@
 # AGENTS.md
 
+> **`CLAUDE.md` in this directory is the source of truth.** Read it in full
+> before doing any work here — it contains the working guidelines (git/branch
+> rules, knowledge base, task management, pull-request registration, reserved
+> ports, engineering defaults). If anything in this file conflicts with
+> `CLAUDE.md`, `CLAUDE.md` wins.
+
 Entrypoint for **AI coding agents** (Codex, Cursor, Aider, Gemini CLI, etc.).
 Claude Code reads [`CLAUDE.md`](CLAUDE.md) instead — that file stays the canonical,
 day-to-day Claude development guide; this one is a self-contained, pointer-heavy
