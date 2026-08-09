@@ -186,22 +186,22 @@ Run `git worktree list` after cleanup to confirm nothing is left behind, and sur
 
 ## Knowledge Base
 
-Project knowledge lives in the private repo **`joaoh82/projects-knowledge`** under `projects/<project-name>/`. The repo is cloned at `~/projects/projects-knowledge` on every machine (in cloud environments, clone it to that same path). On machines with Obsidian, the vault merely symlinks into this repo — **never edit via the Obsidian vault path**; always work in the repo working tree.
+Project knowledge lives in the **`projects-knowledge` Obsidian vault**, at `~/Documents/projects-knowledge/Projects/<project-name>/`. This is a plain folder synced by Obsidian — there is no git, nothing to clone, pull, commit, or push. Just read and write the files directly.
 
-**Repo workflow:**
+**Workflow:**
 
-- **At session start:** clone or pull the repo, read the root `README.md` index to locate the current project's folder, and read ONLY that folder unless instructed otherwise. Do not read other projects' folders.
-- **All updates** to project knowledge go directly to the repo working tree (`~/projects/projects-knowledge` locally, or the clone in cloud environments). Always pull before writing to avoid conflicts.
-- **At session end:** if you changed anything, commit with a short descriptive message and push.
-- **Exception to the never-touch-`main` rule:** `projects-knowledge` is a notes repo, not a code project — commit directly to its default branch. The rule still applies in full to every code repo.
+- **At session start:** read this project's folder (below). Read ONLY that folder unless instructed otherwise — do not read other projects' folders.
+- **All updates** are ordinary file writes to the vault path. No staging, no commits; Obsidian handles syncing across machines.
+- **The vault path is the same on every machine.** If `~/Documents/projects-knowledge/` does not exist (cloud sandbox, remote agent, CI), there is no knowledge base in that environment — skip it silently and carry on. Never try to reconstruct it from a git remote.
+- **This is the only knowledge-base location.** Ignore any older references to a `joaoh82/projects-knowledge` git repo or to `~/projects/projects-knowledge` — that repo is retired.
 
-### Project-specific — `~/projects/projects-knowledge/projects/mailbase/`
+### Project-specific — `~/Documents/projects-knowledge/Projects/mailbase/`
 
 - **Code on Mac:** `/Users/joaoh82/projects/mailbase`
 - **Code on Windows:** `D:\projects\mailbase`
-- **Context (read first):** `~/projects/projects-knowledge/projects/mailbase/context.md`
-- **Notes (running journal):** `~/projects/projects-knowledge/projects/mailbase/notes.md`
-- **Project wiki:** `~/projects/projects-knowledge/projects/mailbase/wiki/`
+- **Context (read first):** `~/Documents/projects-knowledge/Projects/mailbase/context.md`
+- **Notes (running journal):** `~/Documents/projects-knowledge/Projects/mailbase/notes.md`
+- **Project wiki:** `~/Documents/projects-knowledge/Projects/mailbase/wiki/`
 
 **How to use each:**
 
@@ -214,13 +214,6 @@ Project knowledge lives in the private repo **`joaoh82/projects-knowledge`** und
 - New stable fact about the product/domain → update `context.md`.
 - A decision, incident, or working note → append a dated entry to `notes.md`.
 - Reusable reference material (setup steps, credential locations, architecture) → new/updated file in `wiki/`.
-
-### Cross-project knowledge — `~/Documents/josh-obsidian-synced/vault/` (Obsidian machines only)
-
-- **General wiki:** `~/Documents/josh-obsidian-synced/vault/wiki/` — start at `_master-index.md`, then drill into the relevant topic's `_index.md`.
-- **Raw dumps:** `~/Documents/josh-obsidian-synced/vault/raw/` — drop unprocessed research here as `YYYY-MM-DD-{slug}.md`.
-
-Read the general wiki when the question isn't specific to this project. Drop raw research or imported notes into `vault/raw/` so it's captured even before it's distilled. This vault has not moved to the knowledge repo — it only exists on machines with the Obsidian vault; if the path doesn't exist, skip it.
 
 ## Task management
 
