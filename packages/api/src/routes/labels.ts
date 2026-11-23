@@ -1,11 +1,16 @@
 import { labels } from "@mailbase/shared";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
 import { hasMailboxAccess } from "../lib/access";
 import type { AppEnv } from "../lib/context";
-import { serializeLabel } from "../lib/labels";
+import { sessionServiceContext } from "../lib/service-context";
+import {
+  createLabel,
+  listLabels,
+  normalizeLabelColor,
+} from "../services/message-actions";
 
 // User-defined labels (MAIL-16), scoped to a shared mailbox. Any member of a
 // mailbox may manage its labels (like the shared signature), so authorization
@@ -15,16 +20,8 @@ import { serializeLabel } from "../lib/labels";
 export const labelRoutes = new Hono<AppEnv>();
 
 const MAX_NAME_LENGTH = 64;
-// '' (default chip) or a #rrggbb hex value, so the UI palette stays bounded.
-const COLOR_RE = /^#[0-9a-f]{6}$/;
-
-/** Normalizes a color input to '' or #rrggbb, or null if it is invalid. */
-function normalizeColor(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") return "";
-  if (typeof value !== "string") return null;
-  const lower = value.trim().toLowerCase();
-  return COLOR_RE.test(lower) ? lower : null;
-}
+// Colors are '' (default chip) or #rrggbb, so the UI palette stays bounded.
+const normalizeColor = normalizeLabelColor;
 
 /** A label the user may manage: it exists and they belong to its mailbox. */
 async function getManageableLabel(
@@ -44,54 +41,26 @@ async function getManageableLabel(
 
 // All labels for a mailbox the user belongs to (sidebar + apply menu).
 labelRoutes.get("/", async (c) => {
-  const db = drizzle(c.env.DB);
-  const mailboxId = c.req.query("mailboxId") ?? "";
-  if (!(await hasMailboxAccess(db, c.get("user").id, mailboxId))) {
-    return c.json({ error: "Mailbox not found" }, 404);
-  }
-
-  const rows = await db
-    .select()
-    .from(labels)
-    .where(eq(labels.mailboxId, mailboxId))
-    .orderBy(asc(labels.name))
-    .all();
-  return c.json({ labels: rows.map(serializeLabel) });
+  return c.json({
+    labels: await listLabels(
+      sessionServiceContext(c),
+      c.req.query("mailboxId") ?? "",
+    ),
+  });
 });
 
 // Create a label in a mailbox the user belongs to.
 labelRoutes.post("/", async (c) => {
-  const db = drizzle(c.env.DB);
   const body = (await c.req.json().catch(() => null)) as Record<
     string,
     unknown
   > | null;
-
-  const mailboxId = typeof body?.mailboxId === "string" ? body.mailboxId : "";
-  if (!(await hasMailboxAccess(db, c.get("user").id, mailboxId))) {
-    return c.json({ error: "Mailbox not found" }, 404);
-  }
-
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
-  if (!name || name.length > MAX_NAME_LENGTH) {
-    return c.json(
-      { error: `name is required (1–${MAX_NAME_LENGTH} characters)` },
-      400,
-    );
-  }
-  const color = normalizeColor(body?.color);
-  if (color === null) {
-    return c.json({ error: "color must be a #rrggbb hex value" }, 400);
-  }
-
-  const id = crypto.randomUUID();
-  try {
-    await db.insert(labels).values({ id, mailboxId, name, color });
-  } catch {
-    // Unique (mailbox_id, name): a label by that name already exists here.
-    return c.json({ error: "A label with that name already exists" }, 409);
-  }
-  return c.json({ label: { id, mailboxId, name, color } }, 201);
+  const label = await createLabel(sessionServiceContext(c), {
+    mailboxId: typeof body?.mailboxId === "string" ? body.mailboxId : "",
+    name: body?.name,
+    color: body?.color,
+  });
+  return c.json({ label }, 201);
 });
 
 // Rename and/or recolor a label.

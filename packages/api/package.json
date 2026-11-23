@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@mailbase/shared": "*",
+    "@modelcontextprotocol/server": "^2.4.0",
     "hono": "^4.12.25",
-    "postal-mime": "^2.7.4"
+    "postal-mime": "^2.7.4",
+    "zod": "^4.6.7"
   }
 }
