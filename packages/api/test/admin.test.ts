@@ -368,9 +368,52 @@ describe("verification status and provisioning", () => {
 
     const provision = (await (
       await send("POST", `/api/admin/domains/${domain.id}/provision`, undefined, josh)
-    ).json()) as { steps: { ok: boolean }[]; simulated: boolean };
-    expect(provision.steps.length).toBe(3);
+    ).json()) as { steps: { step: string; ok: boolean }[]; simulated: boolean };
+    expect(provision.steps.map((s) => s.step)).toEqual([
+      "Enable Email Routing",
+      "Check apex SPF record",
+      "Route catch-all to the email worker",
+      "Write Resend DKIM/SPF records",
+    ]);
     expect(provision.steps.every((s) => s.ok)).toBe(true);
+
+    // Resolving the SPF conflict in simulation changes nothing and re-provisions.
+    const resolved = await send(
+      "POST",
+      `/api/admin/domains/${domain.id}/resolve-spf-conflict`,
+      undefined,
+      josh,
+    );
+    expect(resolved.status).toBe(200);
+    const body = (await resolved.json()) as {
+      changed: unknown;
+      steps: { ok: boolean }[];
+      simulated: boolean;
+    };
+    expect(body.changed).toBeNull();
+    expect(body.simulated).toBe(true);
+    expect(body.steps.every((s) => s.ok)).toBe(true);
+  });
+
+  it("refuses SPF resolution for a manual domain and for non-admins", async () => {
+    const member = await login();
+    const forbidden = await send(
+      "POST",
+      "/api/admin/domains/dom-test/resolve-spf-conflict",
+      undefined,
+      member,
+    );
+    expect(forbidden.status).toBe(403);
+
+    await makeJoshAdmin();
+    const josh = await login();
+    const manual = await send(
+      "POST",
+      "/api/admin/domains/dom-test/resolve-spf-conflict",
+      undefined,
+      josh,
+    );
+    expect(manual.status).toBe(400);
   });
 
   it("returns empty status for a manually-seeded domain", async () => {

@@ -19,6 +19,7 @@ import {
   addDomainMailbox,
   type AdminDomain,
   type ApexMxConflict,
+  type ApexSpfConflict,
   ApiError,
   deleteDomainAddress,
   deleteDomainMailbox,
@@ -28,8 +29,10 @@ import {
   getDomainStatus,
   listDomains,
   provisionDomain,
+  type ProvisionConflict,
   type ProvisionResult,
   resolveMxConflict,
+  resolveSpfConflict,
   setDomainPolicy,
   verifyDomain,
 } from "../api";
@@ -43,6 +46,19 @@ type View =
 
 const errMsg = (e: unknown) =>
   e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+
+/** The conflict of one kind reported on a failed provisioning step, if any. */
+function findConflict<K extends ProvisionConflict["kind"]>(
+  result: ProvisionResult,
+  kind: K,
+): Extract<ProvisionConflict, { kind: K }> | null {
+  for (const s of result.steps) {
+    if (!s.ok && s.conflict?.kind === kind) {
+      return s.conflict as Extract<ProvisionConflict, { kind: K }>;
+    }
+  }
+  return null;
+}
 
 // Admin-only domain management (Phase 5). One overlay with three views: the
 // domain list, the add-domain wizard (which surfaces the manual nameserver
@@ -285,6 +301,8 @@ function DomainDetailView({
   // True once the operator chooses to remove the conflicting apex MX themselves,
   // so we hide the prompt until the next provision attempt.
   const [mxManual, setMxManual] = useState(false);
+  // Same, for the apex SPF prompt.
+  const [spfManual, setSpfManual] = useState(false);
 
   const refreshDetail = useCallback(
     () => getDomainDetail(domainId).then(setDetail),
@@ -413,10 +431,7 @@ function DomainDetailView({
             </p>
           ))}
           <MxConflictPrompt
-            conflict={
-              provision.steps.find((s) => !s.ok && s.conflict?.kind === "apex_mx")
-                ?.conflict ?? null
-            }
+            conflict={findConflict(provision, "apex_mx")}
             manual={mxManual}
             busy={busy}
             onRemove={() =>
@@ -427,6 +442,19 @@ function DomainDetailView({
               })
             }
             onManual={() => setMxManual(true)}
+          />
+          <SpfConflictPrompt
+            conflict={findConflict(provision, "apex_spf")}
+            manual={spfManual}
+            busy={busy}
+            onFix={() =>
+              act("resolve-spf", async () => {
+                setSpfManual(false);
+                setProvision(await resolveSpfConflict(domainId));
+                await refreshStatus();
+              })
+            }
+            onManual={() => setSpfManual(true)}
           />
         </div>
       )}
@@ -546,6 +574,82 @@ function MxConflictPrompt({
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : null}{" "}
           Remove {them} &amp; retry
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy !== null}
+          onClick={onManual}
+        >
+          I&apos;ll do it manually
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Shown when "Check apex SPF record" fails: the apex has no SPF, several, or one
+// that doesn't include Cloudflare's — so Email Routing reports "misconfigured".
+// Shows the exact merged record mailbase would write before writing it.
+function SpfConflictPrompt({
+  conflict,
+  manual,
+  busy,
+  onFix,
+  onManual,
+}: {
+  conflict: ApexSpfConflict | null;
+  manual: boolean;
+  busy: string | null;
+  onFix: () => void;
+  onManual: () => void;
+}) {
+  if (!conflict) return null;
+
+  if (manual) {
+    return (
+      <p className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200/90">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          Set the apex SPF record in your Cloudflare DNS panel to include{" "}
+          <code>include:_spf.mx.cloudflare.net</code>, then click{" "}
+          <strong>Provision</strong> again.
+        </span>
+      </p>
+    );
+  }
+
+  const n = conflict.records.length;
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-200/90">
+      <p className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          {n === 0
+            ? "The domain has no SPF record, so Email Routing reports it misconfigured."
+            : n === 1
+              ? "The domain's SPF record doesn't authorise Cloudflare Email Routing, so it reports the zone misconfigured:"
+              : `The domain has ${n} SPF records (only one is allowed):`}
+        </span>
+      </p>
+      {n > 0 && (
+        <ul className="ml-6 list-disc space-y-0.5 break-all font-mono text-amber-100/80">
+          {conflict.records.map((r) => (
+            <li key={r.id}>{r.content}</li>
+          ))}
+        </ul>
+      )}
+      <p>
+        {n === 0 ? "Add" : n === 1 ? "Replace it with" : "Combine them into"} this
+        record? Every other sender already authorised is kept:
+      </p>
+      <p className="ml-6 break-all font-mono text-amber-100/80">{conflict.proposed}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={busy !== null} onClick={onFix}>
+          {busy === "resolve-spf" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : null}{" "}
+          Update SPF &amp; retry
         </Button>
         <Button
           variant="ghost"

@@ -260,6 +260,13 @@ secrets are required for the polling baseline.
 (or reused) via the Cloudflare API and steps 2–4 run via API too; the only manual
 step is delegating nameservers at the registrar, which the UI surfaces with the
 exact nameservers to set. See `docs/SELF_HOSTING.md` §16.
+Two pre-existing apex records can block a clean provision, and each is reported on its
+step with an operator-confirmed fix rather than changed silently: a non-Cloudflare MX
+(Cloudflare error 2008 — delete it) and an SPF record without
+`include:_spf.mx.cloudflare.net` (Email Routing adds SPF only when none exists, so it
+reports the zone "misconfigured" — **merge** Cloudflare's include into the existing record,
+per Cloudflare's guidance, keeping every other authorised sender; see
+`packages/api/src/lib/provisioning/spf.ts`).
 
 ---
 

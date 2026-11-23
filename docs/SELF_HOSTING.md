@@ -437,6 +437,16 @@ nothing, and says so).
    error 2008) and the result offers **Remove it & retry** (mailbase deletes just that apex
    MX and re-provisions) or **I'll do it manually**; subdomain MX such as Resend's `send` is
    never touched.
+
+   Provisioning also checks the apex **SPF** record. Enabling Email Routing only adds SPF
+   when the apex has none, so a domain that arrives with one — typically a registrar's
+   email-forwarding SPF such as Namecheap's `include:spf.efwd.registrar-servers.com` — is
+   left showing Email Routing **misconfigured**. The "Check apex SPF record" step then
+   shows the current record and the exact merged record mailbase proposes, and offers
+   **Update SPF & retry** or **I'll do it manually**. The merge adds
+   `include:_spf.mx.cloudflare.net`, keeps every other sender and the existing `all`
+   qualifier, drops only the dead registrar-forwarding include, and collapses duplicate SPF
+   records into one; other apex TXT records (site verifications etc.) are never touched.
 4. Click **Verify** to have Resend re-check its records, and watch the status badges go
    green. Send a test message to `hello@yourdomain.com` to confirm inbound, and compose
    from the new address to confirm outbound (DKIM/SPF pass).

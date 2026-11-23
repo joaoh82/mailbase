@@ -17,6 +17,7 @@ import {
   ProvisioningError,
   provisionDomain,
   resolveApexMxConflict,
+  resolveApexSpfConflict,
   verifyResendDomain,
 } from "../lib/provisioning";
 
@@ -244,6 +245,23 @@ adminRoutes.post("/domains/:id/resolve-mx-conflict", async (c) => {
   if (!domain) return c.json({ error: "Domain not found" }, 404);
   try {
     return c.json(await resolveApexMxConflict(db, c.env, domain));
+  } catch (err) {
+    if (err instanceof ProvisioningError) {
+      return c.json({ error: err.message }, err.status as 400);
+    }
+    throw err;
+  }
+});
+
+// Resolve an apex SPF that doesn't authorise Email Routing (zone reported
+// "misconfigured"): merge Cloudflare's include into the existing SPF, keeping
+// every other sender, then re-run provisioning. Other TXT records are untouched.
+adminRoutes.post("/domains/:id/resolve-spf-conflict", async (c) => {
+  const db = drizzle(c.env.DB);
+  const domain = await loadDomain(db, c.req.param("id"));
+  if (!domain) return c.json({ error: "Domain not found" }, 404);
+  try {
+    return c.json(await resolveApexSpfConflict(db, c.env, domain));
   } catch (err) {
     if (err instanceof ProvisioningError) {
       return c.json({ error: err.message }, err.status as 400);
