@@ -1,7 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  forwardBody,
+  fwdSubject,
+  quoteReplyBody,
+  reSubject,
+} from "@mailbase/shared/quote";
+import {
   applyLabel,
+  type Draft,
   listAllMessages,
+  listDrafts,
   listIdentities,
   listLabels,
   listMailboxes,
@@ -31,6 +39,7 @@ import {
 } from "../lib/preferences";
 import { AdminPanel } from "./AdminPanel";
 import type { ComposeInitial } from "./ComposeModal";
+import { DraftsList } from "./DraftsList";
 import { MessageList } from "./MessageList";
 import { ALL_DOMAINS, ALL_INBOXES, Sidebar } from "./Sidebar";
 import { ThreadView } from "./ThreadView";
@@ -75,18 +84,8 @@ export interface Selection {
 
 export type ComposeKind = "reply" | "replyAll" | "forward";
 
-const reSubject = (s: string) => (/^re:/i.test(s.trim()) ? s : `Re: ${s}`);
-const fwdSubject = (s: string) =>
-  /^fwd?:/i.test(s.trim()) ? s : `Fwd: ${s}`;
-
-function quoteBody(message: MessageDetail): string {
-  const when = new Date(message.date).toLocaleString();
-  const quoted = (message.bodyText || "")
-    .split("\n")
-    .map((line) => `> ${line}`)
-    .join("\n");
-  return `\n\nOn ${when}, ${message.fromAddr} wrote:\n${quoted}\n`;
-}
+// Reply/forward prefill comes from packages/shared/src/quote.ts, the same
+// helpers the API uses for server-side (agent) reply drafts.
 
 export function MailApp({
   user,
@@ -100,7 +99,8 @@ export function MailApp({
   const [domainFilter, setDomainFilter] = useState<string>(ALL_DOMAINS);
   const [folder, setFolder] = useState<Folder>("inbox");
   // Which main surface is showing: the mail three-pane or the Calendar (MAIL-28).
-  const [view, setView] = useState<"mail" | "calendar">("mail");
+  // Drafts (Phase 8) is its own pane too: server-side drafts, not a folder.
+  const [view, setView] = useState<"mail" | "calendar" | "drafts">("mail");
   const [activeQuery, setActiveQuery] = useState("");
   const [items, setItems] = useState<MessageListItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -125,6 +125,10 @@ export function MailApp({
   const [labels, setLabels] = useState<Label[]>([]);
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [labelsManaging, setLabelsManaging] = useState(false);
+  // Your drafts for the selected mailbox (or every mailbox in the unified
+  // view): the Drafts pane and the sidebar count (Phase 8).
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
   const loadSeq = useRef(0);
 
   const isAll = mailboxId === ALL_INBOXES;
@@ -184,6 +188,17 @@ export function MailApp({
   }, [mailboxId, fail]);
 
   useEffect(refreshLabels, [refreshLabels]);
+
+  const refreshDrafts = useCallback(() => {
+    if (!mailboxId) return;
+    setDraftsLoading(true);
+    listDrafts(mailboxId === ALL_INBOXES ? undefined : mailboxId)
+      .then(({ drafts }) => setDrafts(drafts))
+      .catch(fail)
+      .finally(() => setDraftsLoading(false));
+  }, [mailboxId, fail]);
+
+  useEffect(refreshDrafts, [refreshDrafts]);
 
   // A label belongs to one mailbox, so any mailbox switch clears the filter —
   // this covers manual selection and the domain-switcher auto-fallback alike.
@@ -528,17 +543,14 @@ export function MailApp({
   const handleReply = useCallback(
     (message: MessageDetail, kind: ComposeKind) => {
       const identityId = identityForMailbox(message.mailboxId);
+      const when = new Date(message.date).toLocaleString();
       if (kind === "forward") {
-        const when = new Date(message.date).toLocaleString();
-        const block =
-          `\n\n---------- Forwarded message ----------\n` +
-          `From: ${message.fromAddr}\nDate: ${when}\n` +
-          `Subject: ${message.subject}\nTo: ${message.toAddrs.join(", ")}\n\n` +
-          `${message.bodyText || ""}\n`;
         setCompose({
           identityId,
           subject: fwdSubject(message.subject),
-          body: block,
+          body: forwardBody(message, when),
+          mode: "forward",
+          sourceMessageId: message.id,
         });
         return;
       }
@@ -555,12 +567,18 @@ export function MailApp({
         to: message.fromAddr,
         cc: cc.join(", "),
         subject: reSubject(message.subject),
-        body: quoteBody(message),
+        body: quoteReplyBody(message, when),
         inReplyTo: message.id,
+        mode: kind === "replyAll" ? "reply_all" : "reply",
+        sourceMessageId: message.id,
       });
     },
     [identityForMailbox, ownAddresses],
   );
+
+  const handleOpenDraft = useCallback((draft: Draft) => {
+    setCompose({ draft });
+  }, []);
 
   const selectedMailbox = mailboxes.find((m) => m.id === mailboxId) ?? null;
   const canManage =
@@ -607,6 +625,8 @@ export function MailApp({
         folder={folder}
         searching={activeQuery !== ""}
         calendarActive={view === "calendar"}
+        draftsActive={view === "drafts"}
+        draftCount={drafts.length}
         canManage={Boolean(canManage && selectedMailbox)}
         totalUnread={totalUnread}
         labels={labels}
@@ -625,6 +645,10 @@ export function MailApp({
         }}
         onSelectLabel={handleSelectLabel}
         onOpenCalendar={() => setView("calendar")}
+        onOpenDrafts={() => {
+          setView("drafts");
+          refreshDrafts();
+        }}
         onManageLabels={() => setLabelsManaging(true)}
         onManage={() => setManaging(true)}
         onOpenAdmin={() => setAdminOpen(true)}
@@ -648,6 +672,14 @@ export function MailApp({
             onAuthError={onSignedOut}
           />
         </Suspense>
+      ) : view === "drafts" ? (
+        <DraftsList
+          drafts={drafts}
+          loading={draftsLoading}
+          error={error}
+          onOpen={handleOpenDraft}
+          onRefresh={refreshDrafts}
+        />
       ) : (
         <>
           <MessageList
@@ -698,7 +730,11 @@ export function MailApp({
           <ComposeModal
             identities={identities}
             initial={compose}
-            onClose={() => setCompose(null)}
+            onClose={() => {
+              setCompose(null);
+              // The composer may have saved, sent or discarded a draft.
+              refreshDrafts();
+            }}
             onSent={handleSent}
           />
         </Suspense>

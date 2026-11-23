@@ -1,6 +1,7 @@
 import {
   Archive,
   CalendarDays,
+  FileText,
   Globe,
   Inbox,
   LogOut,
@@ -40,6 +41,8 @@ export function Sidebar({
   folder,
   searching,
   calendarActive,
+  draftsActive,
+  draftCount,
   canManage,
   totalUnread,
   labels,
@@ -50,6 +53,7 @@ export function Sidebar({
   onSelectFolder,
   onSelectLabel,
   onOpenCalendar,
+  onOpenDrafts,
   onManageLabels,
   onManage,
   onOpenAdmin,
@@ -65,6 +69,10 @@ export function Sidebar({
   searching: boolean;
   /** True when the Calendar surface is open (MAIL-28), not the mail panes. */
   calendarActive: boolean;
+  /** True when the Drafts view (Phase 8) is open. */
+  draftsActive: boolean;
+  /** Your drafts in the selected mailbox (or all mailboxes). */
+  draftCount: number;
   canManage: boolean;
   totalUnread: number;
   // Labels of the selected mailbox (empty in the "all inboxes" view, since
@@ -78,6 +86,7 @@ export function Sidebar({
   onSelectFolder: (folder: Folder) => void;
   onSelectLabel: (labelId: string) => void;
   onOpenCalendar: () => void;
+  onOpenDrafts: () => void;
   onManageLabels: () => void;
   onManage: () => void;
   onOpenAdmin: () => void;
@@ -157,6 +166,7 @@ export function Sidebar({
                 !searching &&
                 !labelFilter &&
                 !calendarActive &&
+                !draftsActive &&
                 "bg-slate-800 text-slate-100",
             )}
           >
@@ -169,6 +179,23 @@ export function Sidebar({
             )}
           </button>
         ))}
+        {/* Drafts (Phase 8): server-side, author-private — yours, including
+            those an agent wrote for you with an API token. */}
+        <button
+          onClick={onOpenDrafts}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-800",
+            draftsActive && "bg-slate-800 text-slate-100",
+          )}
+        >
+          <FileText className="h-4 w-4" />
+          <span className="flex-1 text-left">Drafts</span>
+          {draftCount > 0 && (
+            <span className="rounded-full bg-slate-700 px-1.5 text-xs font-semibold text-slate-200">
+              {draftCount}
+            </span>
+          )}
+        </button>
         <button
           onClick={onOpenCalendar}
           className={cn(
@@ -245,7 +272,7 @@ export function Sidebar({
           className="w-full justify-start"
           onClick={onOpenSettings}
         >
-          <Settings className="h-3.5 w-3.5" /> Signature
+          <Settings className="h-3.5 w-3.5" /> Settings
         </Button>
         <p className="truncate px-2 text-xs text-slate-500" title={user.email}>
           {user.displayName || user.email}
