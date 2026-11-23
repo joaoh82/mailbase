@@ -660,11 +660,20 @@ export interface ApexMxConflict {
   records: { id: string; name: string; content: string; priority?: number }[];
 }
 
+/** The apex SPF doesn't authorise Email Routing; `proposed` is the merged fix. */
+export interface ApexSpfConflict {
+  kind: "apex_spf";
+  records: { id: string; content: string }[];
+  proposed: string;
+}
+
+export type ProvisionConflict = ApexMxConflict | ApexSpfConflict;
+
 export interface ProvisionStep {
   step: string;
   ok: boolean;
   detail: string;
-  conflict?: ApexMxConflict;
+  conflict?: ProvisionConflict;
 }
 
 export interface ProvisionResult {
@@ -674,6 +683,10 @@ export interface ProvisionResult {
 
 export interface ResolveMxConflictResult extends ProvisionResult {
   removed: { name: string; content: string }[];
+}
+
+export interface ResolveSpfConflictResult extends ProvisionResult {
+  changed: { before: string[]; after: string } | null;
 }
 
 export function listDomains(): Promise<{ domains: AdminDomain[] }> {
@@ -701,6 +714,12 @@ export function provisionDomain(id: string): Promise<ProvisionResult> {
 
 export function resolveMxConflict(id: string): Promise<ResolveMxConflictResult> {
   return request(`/api/admin/domains/${id}/resolve-mx-conflict`, {
+    method: "POST",
+  });
+}
+
+export function resolveSpfConflict(id: string): Promise<ResolveSpfConflictResult> {
+  return request(`/api/admin/domains/${id}/resolve-spf-conflict`, {
     method: "POST",
   });
 }

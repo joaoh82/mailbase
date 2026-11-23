@@ -4,10 +4,16 @@
 // three operations the admin routes call:
 //   createDomain    — find/create the Cloudflare zone, register the Resend
 //                     domain, and insert the domains row + default mailbox.
-//   provisionDomain — enable Email Routing, point the catch-all at the email
-//                     worker, and write Resend's DKIM/SPF records into the zone.
+//   provisionDomain — enable Email Routing, check the apex SPF authorises it,
+//                     point the catch-all at the email worker, and write
+//                     Resend's DKIM/SPF records into the zone.
 //                     Idempotent: safe to re-run once the zone is active.
 //   getDomainStatus — read live verification status from both providers.
+//
+// Two conflicts can block a clean provision; each is reported on its step and
+// has an explicit, operator-confirmed fix: a foreign apex MX
+// (resolveApexMxConflict) and an apex SPF that lacks Cloudflare's include
+// (resolveApexSpfConflict, see ./spf).
 //
 // createDomain is one synchronous call; provisionDomain/getDomainStatus are
 // split out because they only succeed once the operator has delegated
@@ -31,9 +37,11 @@ import {
   getDomainRegistrar,
   type RegisteredDomain,
 } from "./resend-domains";
+import { type ApexSpfConflict, findApexSpfConflict, fixApexSpf } from "./spf";
 
 export * from "./cloudflare";
 export * from "./resend-domains";
+export * from "./spf";
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](-?[a-z0-9])*\.)+[a-z]{2,}$/;
 const LOCAL_PART_RE = /^[a-z0-9._-]+$/;
@@ -155,12 +163,41 @@ export interface ApexMxConflict {
   records: { id: string; name: string; content: string; priority?: number }[];
 }
 
+export type ProvisionConflict = ApexMxConflict | ApexSpfConflict;
+
 export interface ProvisionStep {
   step: string;
   ok: boolean;
   detail: string;
-  /** Present on a failed "Enable Email Routing" step caused by error 2008. */
-  conflict?: ApexMxConflict;
+  /**
+   * Present on a failed step the UI can offer to fix: "Enable Email Routing"
+   * blocked by error 2008 (apex_mx), or "Check apex SPF record" (apex_spf).
+   */
+  conflict?: ProvisionConflict;
+}
+
+/** Thrown inside the SPF step so the step fails carrying its conflict. */
+class ApexSpfConflictError extends Error {
+  constructor(readonly conflict: ApexSpfConflict) {
+    const n = conflict.records.length;
+    super(
+      n === 0
+        ? "No SPF record at the apex; Email Routing needs one"
+        : n > 1
+          ? `${n} SPF records at the apex; SPF allows only one`
+          : "The apex SPF record doesn't include _spf.mx.cloudflare.net, so Cloudflare reports Email Routing as misconfigured",
+    );
+  }
+}
+
+/** Domains seeded by hand have no provider handles, so there's nothing to provision. */
+function requireProviderHandles(domain: typeof domains.$inferSelect): void {
+  if (!domain.cloudflareZoneId || !domain.resendDomainId) {
+    throw new ProvisioningError(
+      400,
+      "This domain was set up manually and has no provider handles to provision",
+    );
+  }
 }
 
 /**
@@ -198,12 +235,7 @@ export async function provisionDomain(
   env: Env,
   domain: typeof domains.$inferSelect,
 ): Promise<{ steps: ProvisionStep[]; simulated: boolean }> {
-  if (!domain.cloudflareZoneId || !domain.resendDomainId) {
-    throw new ProvisioningError(
-      400,
-      "This domain was set up manually and has no provider handles to provision",
-    );
-  }
+  requireProviderHandles(domain);
 
   const cloudflare = getCloudflareApi(env);
   const registrar = getDomainRegistrar(env);
@@ -212,12 +244,12 @@ export async function provisionDomain(
   const run = async (
     step: string,
     fn: () => Promise<string>,
-    onError?: (err: unknown) => Promise<ApexMxConflict | undefined>,
+    onError?: (err: unknown) => Promise<ProvisionConflict | undefined>,
   ) => {
     try {
       steps.push({ step, ok: true, detail: await fn() });
     } catch (err) {
-      let conflict: ApexMxConflict | undefined;
+      let conflict: ProvisionConflict | undefined;
       if (onError) {
         // Best-effort enrichment: never let it mask the original failure.
         try {
@@ -252,6 +284,23 @@ export async function provisionDomain(
       }
       return undefined;
     },
+  );
+  // Enabling routing adds an SPF record only when the apex has none, so a
+  // pre-existing one (e.g. a registrar's forwarding SPF) must be checked here.
+  await run(
+    "Check apex SPF record",
+    async () => {
+      // The mock lists no DNS records, which would read as "no SPF".
+      if (cloudflare.simulated) return "skipped (simulated)";
+      const conflict = await findApexSpfConflict(
+        cloudflare,
+        domain.cloudflareZoneId,
+        domain.name,
+      );
+      if (conflict) throw new ApexSpfConflictError(conflict);
+      return "includes _spf.mx.cloudflare.net";
+    },
+    async (err) => (err instanceof ApexSpfConflictError ? err.conflict : undefined),
   );
   await run("Route catch-all to the email worker", async () => {
     await cloudflare.setCatchAllToWorker(
@@ -293,12 +342,7 @@ export async function resolveApexMxConflict(
   env: Env,
   domain: typeof domains.$inferSelect,
 ): Promise<ResolveMxConflictResult> {
-  if (!domain.cloudflareZoneId || !domain.resendDomainId) {
-    throw new ProvisioningError(
-      400,
-      "This domain was set up manually and has no provider handles to provision",
-    );
-  }
+  requireProviderHandles(domain);
 
   const cloudflare = getCloudflareApi(env);
   const conflicts = await findApexMxConflicts(
@@ -318,6 +362,33 @@ export async function resolveApexMxConflict(
     steps,
     simulated,
   };
+}
+
+export interface ResolveSpfConflictResult {
+  /** The apex SPF before/after, or null if it was already correct. */
+  changed: { before: string[]; after: string } | null;
+  steps: ProvisionStep[];
+  simulated: boolean;
+}
+
+/**
+ * Merge Cloudflare's include into the apex SPF (collapsing duplicates, keeping
+ * every other sender — see mergeApexSpf), then re-run provisioning so the caller
+ * gets fresh step results. Touches only the apex SPF record(s).
+ */
+export async function resolveApexSpfConflict(
+  db: DrizzleD1Database,
+  env: Env,
+  domain: typeof domains.$inferSelect,
+): Promise<ResolveSpfConflictResult> {
+  requireProviderHandles(domain);
+
+  const cloudflare = getCloudflareApi(env);
+  const changed = cloudflare.simulated
+    ? null
+    : await fixApexSpf(cloudflare, domain.cloudflareZoneId, domain.name);
+  const { steps, simulated } = await provisionDomain(db, env, domain);
+  return { changed, steps, simulated };
 }
 
 export interface DomainStatus {

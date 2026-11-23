@@ -64,6 +64,12 @@ export interface CloudflareApi {
   getCatchAll(zoneId: string): Promise<CatchAllStatus | null>;
   /** Create the record, or update it in place if one of the same type+name exists. */
   upsertDnsRecord(zoneId: string, record: DnsRecordInput): Promise<void>;
+  /**
+   * Edit one specific record by id. Use this rather than upsertDnsRecord where
+   * several records share a type+name (e.g. the many TXT records at an apex).
+   */
+  updateDnsRecord(zoneId: string, recordId: string, record: DnsRecordInput): Promise<void>;
+  createDnsRecord(zoneId: string, record: DnsRecordInput): Promise<void>;
   /** List records in a zone, optionally filtered by type and/or exact name. */
   listDnsRecords(
     zoneId: string,
@@ -216,13 +222,7 @@ export class RealCloudflareApi implements CloudflareApi {
     zoneId: string,
     record: DnsRecordInput,
   ): Promise<void> {
-    const payload = {
-      type: record.type,
-      name: record.name,
-      content: record.content,
-      ttl: record.ttl ?? 1,
-      ...(record.priority !== undefined ? { priority: record.priority } : {}),
-    };
+    const payload = toPayload(record);
     // Idempotent: one record per (type, name). Update in place if present so
     // re-running provisioning never duplicates records.
     const matches = await this.request<CfDnsRecord[]>(
@@ -234,6 +234,20 @@ export class RealCloudflareApi implements CloudflareApi {
     } else {
       await this.request("POST", `/zones/${zoneId}/dns_records`, payload);
     }
+  }
+
+  async updateDnsRecord(
+    zoneId: string,
+    recordId: string,
+    record: DnsRecordInput,
+  ): Promise<void> {
+    // PATCH, not PUT: only the fields we send change, so the record's comment
+    // and tags survive.
+    await this.request("PATCH", `/zones/${zoneId}/dns_records/${recordId}`, toPayload(record));
+  }
+
+  async createDnsRecord(zoneId: string, record: DnsRecordInput): Promise<void> {
+    await this.request("POST", `/zones/${zoneId}/dns_records`, toPayload(record));
   }
 
   async listDnsRecords(
@@ -284,6 +298,16 @@ interface CfDnsRecord {
   priority?: number;
 }
 
+function toPayload(record: DnsRecordInput) {
+  return {
+    type: record.type,
+    name: record.name,
+    content: record.content,
+    ttl: record.ttl ?? 1,
+    ...(record.priority !== undefined ? { priority: record.priority } : {}),
+  };
+}
+
 function toZoneInfo(zone: CfZone): ZoneInfo {
   return {
     id: zone.id,
@@ -327,6 +351,8 @@ export class MockCloudflareApi implements CloudflareApi {
     return { enabled: true, action: "worker", targets: ["mailbase-email-worker"] };
   }
   async upsertDnsRecord(): Promise<void> {}
+  async updateDnsRecord(): Promise<void> {}
+  async createDnsRecord(): Promise<void> {}
   async listDnsRecords(): Promise<DnsRecord[]> {
     return [];
   }

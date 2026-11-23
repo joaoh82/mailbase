@@ -219,6 +219,12 @@ As an admin, click **Domains** (the globe at the bottom of the sidebar) → **Ad
      and re-provision, or **I'll do it manually** steps aside so you can remove it in the
      Cloudflare DNS panel and click **Provision** again. Subdomain MX records (such as
      Resend's `send`) are never touched.
+   - **SPF record that doesn't include Cloudflare.** Domains bought at some registrars
+     (Namecheap, for example) arrive with an SPF record for the registrar's email
+     forwarding, which leaves Email Routing showing **misconfigured**. The result shows
+     the current record and the exact one mailbase proposes: **Update SPF & retry** adds
+     Cloudflare's `include:_spf.mx.cloudflare.net` while keeping any other service that
+     sends as your domain, or **I'll do it manually** lets you edit it yourself.
 4. **Verify.** Click **Verify** to have Resend re-check its records, and watch the three
    status badges — **Cloudflare zone**, **Email Routing**, **Resend** — go green. Send a test
    message to `hello@example.com` to confirm inbound, and compose from the new address to

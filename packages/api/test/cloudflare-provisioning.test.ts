@@ -105,6 +105,44 @@ describe("RealCloudflareApi DNS record list/delete", () => {
     );
     expect(init?.method).toBe("DELETE");
   });
+
+  it("updateDnsRecord PATCHes one record by id (so its comment survives)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(cfSuccess({ id: "rec-1" }));
+    const api = new RealCloudflareApi("token-abc", "account-xyz");
+
+    await api.updateDnsRecord("zone-123", "rec-1", {
+      type: "TXT",
+      name: "ex.com",
+      content: '"v=spf1 include:_spf.mx.cloudflare.net ~all"',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(
+      "https://api.cloudflare.com/client/v4/zones/zone-123/dns_records/rec-1",
+    );
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init!.body as string)).toEqual({
+      type: "TXT",
+      name: "ex.com",
+      content: '"v=spf1 include:_spf.mx.cloudflare.net ~all"',
+      ttl: 1,
+    });
+  });
+
+  it("createDnsRecord POSTs to the zone's records", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(cfSuccess({ id: "rec-2" }));
+    const api = new RealCloudflareApi("token-abc", "account-xyz");
+
+    await api.createDnsRecord("zone-123", { type: "TXT", name: "ex.com", content: '"x"' });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.cloudflare.com/client/v4/zones/zone-123/dns_records");
+    expect(init?.method).toBe("POST");
+  });
 });
 
 describe("isCloudflareRoutingMx", () => {
