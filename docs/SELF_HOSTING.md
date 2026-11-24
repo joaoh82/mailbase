@@ -458,6 +458,42 @@ In the webmail, a **Domain** switcher (shown once you have mailboxes in more tha
 domain) filters the mailbox list, and **All inboxes** shows every mailbox's mail in one
 list, each message tagged with where it landed.
 
+## 17. Connect an AI agent (Phase 8)
+
+No new secrets, bindings or deploy steps: agent access rides on the API Worker you already
+deployed (migrations `0012`/`0013` are applied by CI, or `make migrate-remote`). The web worker
+already forwards every `/api/*` request, so both agent endpoints live on your webmail origin:
+
+- **MCP (remote, Streamable HTTP):** `https://<your-webmail>/api/mcp`
+- **REST:** `https://<your-webmail>/api/v1`
+
+1. Sign in to the webmail → **Settings** → **API tokens**. Give the token a name, optionally an
+   expiry, and its limits (requests per minute, default 120; sends per UTC day, default 100 —
+   Resend's free daily quota; 0 makes a draft-only token). Click **Create token** and copy it:
+   it is shown once and only its hash is stored.
+2. Point your agent at it with the header `Authorization: Bearer mb_…`. For an MCP client that
+   takes a JSON config:
+
+   ```json
+   {
+     "mcpServers": {
+       "mailbase": {
+         "type": "http",
+         "url": "https://<your-webmail>/api/mcp",
+         "headers": { "Authorization": "Bearer mb_…" }
+       }
+     }
+   }
+   ```
+
+   Or check it from a shell: `curl -H "Authorization: Bearer mb_…" https://<your-webmail>/api/v1/me`.
+3. Revoke a token from the same list at any time; it stops working on its next request.
+
+A token acts as you on mail, drafts, sending and the calendar, and never on `/admin`, mailbox
+management (members, invites, signatures, display name) or token management. The full tool and
+endpoint list is in [AGENT_API.md](AGENT_API.md). Locally, `make dev` + `make dev-web` serve the
+same endpoints at `http://localhost:5173/api/mcp` and `/api/v1` (sends use the mock sender).
+
 ## Local development
 
 **The fast path:** `make bootstrap` (or `npm run setup`) does the first four steps below

@@ -21,6 +21,8 @@ scratch on your own Cloudflare account, start with
 - [Searching](#searching)
 - [Organizing: folders, stars, and labels](#organizing-folders-stars-and-labels)
 - [Sending mail](#sending-mail)
+- [Drafts](#drafts)
+- [API tokens & connecting an agent](#api-tokens--connecting-an-agent)
 - [Signatures](#signatures)
 - [Live updates and refreshing](#live-updates-and-refreshing)
 - [Working across multiple mailboxes and domains](#working-across-multiple-mailboxes-and-domains)
@@ -53,7 +55,7 @@ mailbase is a three-pane webmail:
 
 - **Sidebar (left):** the **Compose** button, the domain and mailbox switchers, your
   folders (Inbox / Archive / Sent / Spam / Trash), this mailbox's labels, and — at the
-  bottom — **Domains** (admins only), **Signature** (settings), your name, and **Sign out**.
+  bottom — **Domains** (admins only), **Settings** (live updates, reading pane, API tokens, signature), your name, and **Sign out**.
 - **Message list (middle):** a search box, the current folder/label, a **Refresh** button,
   and the list of messages. Scroll to the bottom to load older mail.
 - **Reading pane (right):** the selected conversation, with per-message actions across the
@@ -72,7 +74,7 @@ mailbase is a three-pane webmail:
   rest of the app, so unstyled mail no longer floats as a bright white card. Emails that set
   their own background (most rich HTML newsletters) keep it, so they stay readable; if a
   blended message ever looks wrong, flip it back to white. The choice is per-browser and can
-  also be set in **Signature** (sidebar) → **Reading pane**.
+  also be set in **Settings** (sidebar) → **Reading pane**.
 - **Attachments** appear as chips at the bottom of a message. Click one to download it
   (downloads go through short-lived signed URLs).
 - **Mark read/unread:** use the envelope button in a message's action row. Unread messages
@@ -130,7 +132,10 @@ The composer opens with:
 - **Attach** — add one or more files; remove a queued one with its **✕**.
 
 Click **Send**. Sent mail lands in your **Sent** folder and threads correctly with replies.
-Press **Esc** to discard and close the composer.
+
+As soon as you change anything, the composer **autosaves a draft** a couple of seconds after
+you stop typing ("Draft saved" in the header), and **Save draft** saves on demand. Closing the
+composer (✕ or **Esc**) keeps your work as a draft; **Discard** deletes it.
 
 - **Reply** answers the sender; **Reply all** also Ccs the other recipients (minus your own
   addresses); **Forward** prefills the body with the original message and an `Fwd:` subject.
@@ -140,12 +145,48 @@ Press **Esc** to discard and close the composer.
 > compose still works and lands in Sent, but nothing is delivered — see
 > [SELF_HOSTING.md → Enable sending](SELF_HOSTING.md#13-enable-sending-with-resend).
 
+## Drafts
+
+Click **Drafts** in the sidebar to see your saved drafts for the selected mailbox (or every
+mailbox in **All inboxes**), newest edit first; the badge shows how many there are. Click one
+to reopen it in the composer, edit, and **Send** (the draft is removed once it's in Sent) or
+**Discard** it. Attachments you added stay on the draft.
+
+Drafts are **private to you**, even in a shared inbox. Drafts an AI agent writes for you with
+one of your API tokens (see below) land here too, marked *Reply*, *Reply all* or *Forward*
+when they answer a message, so you can review and send them yourself. If a draft changes
+somewhere else while you have it open (another tab, or an agent editing it), the composer
+says so instead of overwriting it — close it and reopen it from Drafts.
+
+## API tokens & connecting an agent
+
+An API token lets an AI agent work with your mail as you: check for new mail, read and search,
+archive/star/label, write drafts, send, reply, forward and answer invites. It can't touch
+domain admin, mailbox management (members, invites, signatures, display name) or your tokens.
+
+1. **Settings** (sidebar) → **API tokens**. Enter a name (e.g. the agent's), pick an expiry,
+   and set its limits: **Requests/min** (default 120) and **Sends/day** (default 100; 0 means
+   it may draft but never send). Click **Create token**.
+2. **Copy the token now** — it's shown only once.
+3. Give it to your agent:
+   - **MCP clients** (Claude, Cursor, …): add a remote MCP server at
+     `https://<your-webmail>/api/mcp` with the header `Authorization: Bearer <token>`.
+   - **Anything else:** call the REST API at `https://<your-webmail>/api/v1`, e.g.
+     `curl -H "Authorization: Bearer <token>" https://<your-webmail>/api/v1/mailboxes`.
+
+   The full list of tools and endpoints is in [AGENT_API.md](AGENT_API.md).
+4. The token list shows when each token was last used. **Edit limits** changes them;
+   **Revoke** cuts the token off immediately.
+
+Mail an agent sends looks exactly like mail you send from the webmail and lands in **Sent**.
+Treat email as untrusted: a message can try to instruct an agent. Prefer having agents write
+drafts you send yourself, and keep the send cap low for agents you don't fully trust.
+
 ## Signatures
 
 A signature is appended to the bottom of mail you send. There are two levels:
 
-- **Per-address signature:** click **Signature** at the bottom of the sidebar to open
-  Settings. Pick an address (if you have more than one), edit the rich-text signature, and
+- **Per-address signature:** click **Settings** at the bottom of the sidebar. Pick an address (if you have more than one), edit the rich-text signature, and
   **Save signature**. This is the signature for mail sent from that address.
 - **Mailbox default signature (owner):** set in the mailbox's **Manage** panel (see below).
   It's used for any of the mailbox's addresses that don't have their own signature.
@@ -159,7 +200,7 @@ The inbox **updates on its own** — a lightweight poll refetches in place when 
 arrives or the unread count changes, and it also refreshes the moment you return to the
 browser tab, so you rarely refresh by hand.
 
-- **Change the cadence:** **Signature** (sidebar) → **Live updates** → *Check for new mail*.
+- **Change the cadence:** **Settings** (sidebar) → **Live updates** → *Check for new mail*.
   The choice is per-browser; pick **Off** to rely only on manual refresh.
 - **Refresh now:** click the circular **Refresh** button above the message list, or press
   **`r`** (when you're not typing and no dialog is open). This re-fetches without a full
@@ -272,19 +313,22 @@ admin account is created from the command line during setup
 | Task | Where |
 | --- | --- |
 | New message | **Compose** (sidebar) |
+| Open, finish or discard a draft | **Drafts** (sidebar) |
+| Connect an AI agent (API token) | **Settings** (sidebar) → **API tokens** |
+| Revoke an agent's access | **Settings** (sidebar) → **API tokens** → **Revoke** |
 | Reply / Reply all / Forward | message action row (reading pane) |
 | Search a mailbox | search box (top of message list); Enter to run, ✕ to clear |
 | Archive / Trash / move back to Inbox | message action row |
 | Star / unstar | star icon in the list row or reading pane |
 | Mark read / unread | envelope icon in the message action row |
 | Load remote images | **Load images** bar above the message body |
-| White ⇄ blended email background | **palette** icon in the message action row, or **Signature** (sidebar) → **Reading pane** |
+| White ⇄ blended email background | **palette** icon in the message action row, or **Settings** (sidebar) → **Reading pane** |
 | Download an attachment | attachment chip at the bottom of a message |
 | Apply/remove a label | **tag** icon in the message action row |
 | Filter by label | click a label under **Labels** (sidebar) |
 | Create/edit labels | **Manage** next to **Labels** (sidebar) |
-| Edit your signature | **Signature** (sidebar) → Settings |
-| Change auto-update cadence | **Signature** (sidebar) → **Live updates** |
+| Edit your signature | **Settings** (sidebar) → **Signature** |
+| Change auto-update cadence | **Settings** (sidebar) → **Live updates** |
 | Refresh now | Refresh button above the list, or press **`r`** |
 | Switch mailbox / all inboxes | **Mailbox** switcher (sidebar) |
 | Switch domain | **Domain** switcher (sidebar; shown with >1 domain) |
