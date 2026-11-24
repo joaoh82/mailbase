@@ -1,7 +1,10 @@
 import { env } from "cloudflare:test";
 import {
   addresses,
+  apiTokens,
   attachments,
+  draftAttachments,
+  drafts,
   domains,
   hashPassword,
   identities,
@@ -9,6 +12,7 @@ import {
   mailboxes,
   mailboxMembers,
   messages,
+  rateLimitCounters,
   sessions,
   threads,
   users,
@@ -46,6 +50,10 @@ export const RAW_HTML_EMAIL = [
 // thread, and one message with a raw blob + attachment in R2.
 export async function seed() {
   // Reverse dependency order; wipes FTS via the delete triggers.
+  await db.delete(draftAttachments);
+  await db.delete(drafts);
+  await db.delete(apiTokens);
+  await db.delete(rateLimitCounters);
   await db.delete(attachments);
   await db.delete(messages);
   await db.delete(threads);
@@ -215,4 +223,45 @@ export async function login(
     csrfToken = body.csrfToken;
   }
   return { res, cookie, csrfToken };
+}
+
+/**
+ * Mint a personal API token for a user directly in D1 (bypassing the session
+ * route) and return the bearer value.
+ */
+export async function createApiToken(
+  userId = "user-josh",
+  overrides: Partial<typeof apiTokens.$inferInsert> = {},
+): Promise<{ token: string; id: string }> {
+  const { mintApiToken } = await import("../src/lib/api-token");
+  const minted = mintApiToken();
+  const id = overrides.id ?? `tok-${crypto.randomUUID()}`;
+  await db.insert(apiTokens).values({
+    id,
+    userId,
+    name: "test token",
+    tokenHash: minted.hash,
+    tokenPrefix: minted.prefix,
+    ...overrides,
+  });
+  return { token: minted.token, id };
+}
+
+/** fetch against the API with a bearer token. */
+export async function agentFetch(
+  path: string,
+  token: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<Response> {
+  const { SELF } = await import("cloudflare:test");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    ...init.headers,
+  };
+  if (init.body !== undefined) headers["Content-Type"] = "application/json";
+  return SELF.fetch(`http://webmail.local${path}`, {
+    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+    headers,
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
 }

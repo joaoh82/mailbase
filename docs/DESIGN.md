@@ -20,7 +20,9 @@ outbound relay) but with one deployment serving every domain, instead of one sta
 ### Non-Goals (for now)
 - IMAP/POP3/SMTP access for Outlook/Thunderbird/phone apps (possible later via a VPS bridge
   reading the same storage — see §8).
-- End-to-end encryption and LLM features (VCMail's headline features) — deferred to a later phase.
+- End-to-end encryption and in-product LLM features (VCMail's headline features) — deferred to
+  a later phase. (Phase 8's *agent access* is different: mailbase runs no model; it lets an
+  external agent you connect act on your mail through tokens, REST and MCP.)
 - Serving other people as a product (multi-tenant SaaS hardening, billing, abuse handling).
 
 ---
@@ -93,6 +95,7 @@ outbound relay) but with one deployment serving every domain, instead of one sta
 | Attachments | R2 (same bucket, `attachments/` prefix) | Served via signed URLs from API Worker |
 | Tooling | TypeScript everywhere, Wrangler, Vitest + Miniflare | Standard Cloudflare dev loop |
 | CI/CD | GitHub Actions → `wrangler deploy` | Push-to-deploy |
+| Agent access (Phase 8) | Official MCP TypeScript SDK `@modelcontextprotocol/server` (v2) + `zod` | Remote MCP over stateless Streamable HTTP on the API Worker; the SDK's web-standard transport needs no Node adapters or Durable Objects. Its only deps are its own `core` package and `zod` (also used for the tool input schemas). Adds ~217 KB gzip to the API bundle (163 → 380 KB), well inside Workers limits |
 
 **Monorepo layout**
 
@@ -156,7 +159,23 @@ event_attendees  (event_id, addr, display_name, partstat, role, is_self)
                   -- composite pk (event_id, addr); FK cascades from events. is_self
                   -- marks the mailbox's own line, driving RSVP rendering + the REPLY echo.
 messages_fts     (FTS5 virtual table over subject, from_addr, body_text)
+api_tokens       (id, user_id, name, token_hash, token_prefix,          -- personal API tokens
+                  rate_limit_per_minute, daily_send_cap, expires_at NULL, -- (Phase 8); only the
+                  last_used_at NULL, revoked_at NULL, created_at)        -- SHA-256 is stored
+rate_limit_counters (key, window_start, count)                          -- generic fixed-window
+                  -- counters: tok:req:<id> (60 s) and tok:send:<id> (UTC day).
+drafts           (id, user_id, mailbox_id, identity_id NULL, to_addrs, cc_addrs, bcc_addrs,
+                  subject, body_html, body_text, mode, source_message_id NULL, version,
+                  created_at, updated_at)
+                  -- server-side drafts (Phase 8), author-private. mode ∈ {new, reply,
+                  -- reply_all, forward}; identity_id/source_message_id ON DELETE SET NULL.
+draft_attachments (id, draft_id, filename, content_type, size, r2_key)  -- bytes in R2 under
+                  -- drafts/{draftId}/; rows cascade with the draft.
 ```
+
+Drafts are a separate table, not a `drafts` value of `messages.folder`: that value would need a
+SQLite rebuild of `messages` (its CHECK constraint, FTS triggers, partial unique index and
+inbound FKs), and drafts don't belong in FTS, threads or unread counts anyway.
 
 Folder model: a simple `folder` enum per message (`inbox`, `sent`, `archive`, `trash`, `spam`).
 **Labels** (MAIL-16) are an additive layer on top — a flat, many-to-many tagging system, not
@@ -251,6 +270,37 @@ secrets are required for the polling baseline.
 4. Store a copy in `messages` with `direction=outbound`, `folder=sent` (+ raw copy to R2).
 5. Bounces/complaints: Resend webhooks → API Worker → mark message, surface in UI.
 
+### Agent access (Phase 8)
+An external agent (an MCP client, or anything that speaks HTTP) acts on mail as its user:
+1. **Token.** In Settings → API tokens the user creates a token (`mb_` + 32 random bytes,
+   base64url), shown once; only its SHA-256 is stored. Each token has a name, optional expiry,
+   a requests-per-minute limit (default 120) and a daily send cap (default 100, Resend's free
+   daily quota). Revoking takes effect on the next request. Token management is session-only.
+2. **Front doors.** `/api/v1/*` (REST) and `/api/mcp` (MCP, Streamable HTTP, stateless: one
+   `McpServer` + transport per request, JSON responses, no session id) both authenticate with
+   `Authorization: Bearer mb_…` and nothing else. Both call the same service layer
+   (`packages/api/src/services/`) as the webmail routes, so listing, search, threading, the
+   Sent copy, bounce tracking and authorization are identical. Tools/endpoints are listed in
+   `docs/AGENT_API.md`.
+3. **Monitoring.** `check_new_mail` / `GET /api/v1/messages/new?since=` returns mail in ingest
+   order (`created_at, id`) after a cursor — not by the sender-controlled `Date` header. A first
+   call without `since` returns a cursor for "now". Polling, not push.
+4. **Reading.** Messages come back as plain text (from the raw `.eml`, truncated at 100 KB) with
+   a header subset and attachment metadata; HTML only on request, labelled `untrustedHtml`.
+   Attachments are fetched via absolute signed URLs (the same 15-minute HMAC as the webmail).
+5. **Drafts.** Drafts live server-side and are **author-private**: visible to their author only
+   while still a member of the draft's mailbox, so a draft an agent writes appears in the user's
+   own Drafts in the webmail, where they can edit and send it. Reply/reply-all/forward drafts are
+   built server-side with the webmail's own quote format (`packages/shared/src/quote.ts`);
+   reply-all recovers Cc from the parent's raw `.eml`; forward copies the parent's attachments.
+   Every update may carry `version` (the webmail always sends it); a mismatch is a 409
+   `draft_conflict`. Sending a draft claims it by bumping its version, then re-checks identity
+   ownership, membership and reply-target access — nothing stored at draft time is trusted.
+6. **Sending.** New mail, replies, forwards and drafts all go through `sendMessage` (the same
+   function as `POST /api/send`): sanitize, send via `MailSender`, store raw + rows, keep
+   `provider_message_id`. There is no "sent by agent" marker anywhere. The daily cap is consumed
+   before the provider call and refunded only if the provider refuses.
+
 ### Add a new domain (runbook → now a button)
 1. Add zone to Cloudflare; point GoDaddy nameservers at it.
 2. Enable Email Routing; create catch-all rule → Email Worker (API call).
@@ -279,6 +329,20 @@ per Cloudflare's guidance, keeping every other authorised sender; see
 - Secrets (Resend key, session signing key) in Worker secrets, never in the repo.
 - D1 access only through the API Worker; R2 bucket private.
 - SPF/DKIM/DMARC records per domain (Resend handles DKIM; add DMARC `p=quarantine` once stable).
+- **Agent tokens (Phase 8).** Bearer tokens are a second credential for a user, accepted *only*
+  on `/api/v1/*` and `/api/mcp`, which are mounted before the session middleware and each end
+  in a catch-all 404 (no fall-through). Those routes ignore cookies, so they have no CSRF
+  surface; the session routes stay cookie-only, so a token can never reach `/admin/*` (even an
+  admin's token), mailbox management (members, invites, signatures, display name) or token
+  management — structurally, not by a runtime check. Tokens are stored as SHA-256, compared by
+  hash lookup, checked for revocation/expiry/user on every request; logs carry the token id only,
+  never the token, the `Authorization` header or bodies. Limits are D1 fixed-window counters:
+  per-token requests/minute (429 + `Retry-After`) and sends/UTC day (429 / MCP `isError`).
+- **Accepted risk: prompt injection.** Agents read hostile inbound mail and may send on their
+  own. Mitigations are the per-token caps, revocation, plain-text-by-default bodies and an
+  explicit "untrusted" label on HTML; there is deliberately no recipient allowlist or approval
+  queue (the user chose autonomous send). Use `create_reply_draft` + human send, or a cap of 0,
+  for a token that should only draft.
 
 ---
 
@@ -440,3 +504,27 @@ Calendar event; Accept/Tentative/Decline sends a standards-compliant `REPLY` the
 calendar ingests; a mailbase-created invite renders in Gmail/Outlook as a real invitation with
 working RSVP; updates/cancels reconcile by `UID`; timezones and all-day events render
 correctly — all mailbox-membership-scoped.
+
+### Phase 8 — Agent access (tokens, REST, MCP, drafts) — shipped
+
+Connect an agent to mailbase so it can monitor several mailboxes, read mail, draft replies the
+user reviews in the webmail, and send. Requested explicitly as its own phase (outside Phase 6).
+Uses no new Cloudflare products or bindings: D1, R2 and the API Worker as before, reached via the
+web worker's existing `/api/*` forwarding.
+
+- **Personal API tokens** (`api_tokens`, migration 0012), managed in Settings with a session;
+  scoped to the user (no per-mailbox scopes, no OAuth). Per-token request limit and daily send
+  cap in D1 (`rate_limit_counters`).
+- **Service layer** (`packages/api/src/services/`): the logic that lived inline in route
+  handlers (list/search/poll, read, organize, send, threading, drafts, calendar) is plain
+  functions over `{ db, env, userId }`, called by the session routes, `/api/v1` and MCP.
+- **REST `/api/v1`** and **remote MCP `/api/mcp`** (official SDK, stateless Streamable HTTP):
+  bearer-only, mounted before the session line (§6). 28 tools; see `docs/AGENT_API.md`.
+- **Server-side drafts** (`drafts`, `draft_attachments`, migration 0013) with a Drafts view and
+  autosaving composer in the webmail.
+- Out of scope: OAuth / MCP authorization flow, scoped tokens, a local stdio MCP server, push
+  notifications to agents, recipient allowlists, IMAP/SMTP, and any "sent by agent" marker.
+- **Milestone:** an agent connected with a token monitors a few mailboxes with
+  `check_new_mail`, reads new mail, writes a reply draft that the user edits and sends from the
+  webmail, and sends a couple of emails that are delivered, thread correctly, appear in Sent and
+  get bounce tracking.

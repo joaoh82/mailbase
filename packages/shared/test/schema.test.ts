@@ -54,4 +54,12 @@ describe("drizzle schema", () => {
       "declined",
     ]);
   });
+
+  it("defines the Phase 8 agent-access tables (migrations 0012, 0013)", () => {
+    expect(getTableName(schema.apiTokens)).toBe("api_tokens");
+    expect(getTableName(schema.rateLimitCounters)).toBe("rate_limit_counters");
+    expect(getTableName(schema.drafts)).toBe("drafts");
+    expect(getTableName(schema.draftAttachments)).toBe("draft_attachments");
+    expect(schema.DRAFT_MODES).toEqual(["new", "reply", "reply_all", "forward"]);
+  });
 });

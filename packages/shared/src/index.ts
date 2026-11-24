@@ -6,3 +6,4 @@ export * from "./base64";
 export * from "./subject";
 export * from "./outbound-html";
 export * from "./display-name";
+export * from "./quote";

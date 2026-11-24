@@ -279,6 +279,12 @@ export const messages = sqliteTable(
       table.messageIdHeader,
     ),
     index("idx_messages_provider_message_id").on(table.providerMessageId),
+    // Ingest-order polling for agents (migration 0013, check_new_mail).
+    index("idx_messages_mailbox_created").on(
+      table.mailboxId,
+      table.createdAt,
+      table.id,
+    ),
     // One copy of a message per mailbox; '' (no Message-ID) is exempt.
     uniqueIndex("idx_messages_mailbox_msgid_unique")
       .on(table.mailboxId, table.messageIdHeader)
@@ -431,6 +437,111 @@ export const eventAttendees = sqliteTable(
     isSelf: integer("is_self", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [primaryKey({ columns: [table.eventId, table.addr] })],
+);
+
+// Personal API tokens for agent access (migration 0012, Phase 8). Only the
+// SHA-256 of the token is stored (like sessions); tokenPrefix is the first few
+// characters in clear so the settings UI can tell tokens apart. A token reaches
+// exactly what its user reaches, minus the session-only surface.
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    tokenPrefix: text("token_prefix").notNull(),
+    rateLimitPerMinute: integer("rate_limit_per_minute").notNull().default(120),
+    dailySendCap: integer("daily_send_cap").notNull().default(100),
+    expiresAt: integer("expires_at", { mode: "timestamp" }),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [index("idx_api_tokens_user").on(table.userId)],
+);
+
+// Generic fixed-window counters (migration 0012): per-token request limit and
+// daily send cap. windowStart is the aligned window start, epoch seconds.
+export const rateLimitCounters = sqliteTable("rate_limit_counters", {
+  key: text("key").primaryKey(),
+  windowStart: integer("window_start").notNull(),
+  count: integer("count").notNull().default(0),
+});
+
+export const DRAFT_MODES = ["new", "reply", "reply_all", "forward"] as const;
+export type DraftMode = (typeof DRAFT_MODES)[number];
+
+// Server-side drafts (migration 0013, Phase 8). Author-private: visible only to
+// userId while they are still a member of mailboxId. Nothing here is trusted at
+// send time — identity, membership and source access are re-checked.
+export const drafts = sqliteTable(
+  "drafts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .references(() => mailboxes.id, { onDelete: "cascade" }),
+    identityId: text("identity_id").references(() => identities.id, {
+      onDelete: "set null",
+    }),
+    toAddrs: text("to_addrs", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    ccAddrs: text("cc_addrs", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    bccAddrs: text("bcc_addrs", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    subject: text("subject").notNull().default(""),
+    bodyHtml: text("body_html").notNull().default(""),
+    bodyText: text("body_text").notNull().default(""),
+    mode: text("mode", { enum: DRAFT_MODES }).notNull().default("new"),
+    sourceMessageId: text("source_message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    version: integer("version").notNull().default(1),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index("idx_drafts_user_mailbox").on(
+      table.userId,
+      table.mailboxId,
+      table.updatedAt,
+    ),
+  ],
+);
+
+// Files attached to a draft; bytes in R2 under drafts/{draftId}/.
+export const draftAttachments = sqliteTable(
+  "draft_attachments",
+  {
+    id: text("id").primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    r2Key: text("r2_key").notNull().unique(),
+  },
+  (table) => [index("idx_draft_attachments_draft").on(table.draftId)],
 );
 
 // messages_fts is an FTS5 virtual table (plus sync triggers) that Drizzle

@@ -1,48 +1,26 @@
-import {
-  attachments,
-  eventAttendees,
-  events,
-  labels,
-  messageLabels,
-  messages,
-} from "@mailbase/shared";
-import { and, eq } from "drizzle-orm";
+import { eventAttendees, events } from "@mailbase/shared";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import { Hono, type Context } from "hono";
-import PostalMime from "postal-mime";
+import { Hono } from "hono";
 import { getAccessibleMessage } from "../lib/access";
-import {
-  ATTACHMENT_URL_TTL_SECONDS,
-  attachmentSignature,
-  requireSigningKey,
-} from "../lib/attachment-urls";
 import type { AppEnv } from "../lib/context";
-import { labelsByMessage } from "../lib/labels";
 import { calendarEvent, messageDetail } from "../lib/serialize";
-
-const MOVE_TARGETS = ["inbox", "archive", "trash"] as const;
-type MoveTarget = (typeof MOVE_TARGETS)[number];
+import { sessionServiceContext } from "../lib/service-context";
+import { getMessage, parseRawMessage } from "../services/mail-query";
+import {
+  addMessageLabel,
+  attachmentUrl,
+  moveMessage,
+  removeMessageLabel,
+  setMessageFlag,
+} from "../services/message-actions";
 
 export const messageRoutes = new Hono<AppEnv>();
 
 messageRoutes.get("/:id", async (c) => {
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
-    c.req.param("id"),
-  );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
-  const attachmentRows = await db
-    .select()
-    .from(attachments)
-    .where(eq(attachments.messageId, message.id))
-    .all();
-  const labelsForMessage =
-    (await labelsByMessage(db, [message.id])).get(message.id) ?? [];
+  const found = await getMessage(sessionServiceContext(c), c.req.param("id"));
   return c.json({
-    message: messageDetail(message, attachmentRows, labelsForMessage),
+    message: messageDetail(found.message, found.attachments, found.labels),
   });
 });
 
@@ -85,19 +63,10 @@ messageRoutes.get("/:id/full", async (c) => {
   );
   if (!message) return c.json({ error: "Message not found" }, 404);
 
-  const object = await c.env.MAIL_BUCKET.get(message.r2Key);
-  if (!object) return c.json({ error: "Raw message missing from R2" }, 404);
-
-  let html: string | null = null;
-  let text: string | null = null;
-  try {
-    const email = await PostalMime.parse(await object.arrayBuffer());
-    html = email.html ?? null;
-    text = email.text ?? null;
-  } catch {
-    // Malformed MIME: fall back to the indexed body text below.
-  }
-  return c.json({ html, text: text ?? message.bodyText });
+  const parsed = await parseRawMessage(c.env, message.r2Key);
+  if (!parsed) return c.json({ error: "Raw message missing from R2" }, 404);
+  // Malformed MIME parses to nulls: fall back to the indexed body text.
+  return c.json({ html: parsed.html, text: parsed.text ?? message.bodyText });
 });
 
 messageRoutes.get("/:id/raw", async (c) => {
@@ -122,149 +91,63 @@ messageRoutes.get("/:id/raw", async (c) => {
 });
 
 messageRoutes.post("/:id/read", async (c) => {
-  return setMessageFlag(c, "isRead");
+  const body = await c.req.json().catch(() => null);
+  await setMessageFlag(
+    sessionServiceContext(c),
+    c.req.param("id"),
+    "isRead",
+    body?.isRead,
+  );
+  return c.json({ ok: true });
 });
 
 messageRoutes.post("/:id/star", async (c) => {
-  return setMessageFlag(c, "isStarred");
-});
-
-async function setMessageFlag(
-  c: Context<AppEnv>,
-  flag: "isRead" | "isStarred",
-) {
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
-    c.req.param("id") ?? "",
-  );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
   const body = await c.req.json().catch(() => null);
-  const value = flag === "isRead" ? body?.isRead : body?.isStarred;
-  if (typeof value !== "boolean") {
-    return c.json(
-      { error: `${flag === "isRead" ? "isRead" : "isStarred"} must be a boolean` },
-      400,
-    );
-  }
-
-  await db
-    .update(messages)
-    .set({ [flag]: value })
-    .where(eq(messages.id, message.id));
+  await setMessageFlag(
+    sessionServiceContext(c),
+    c.req.param("id"),
+    "isStarred",
+    body?.isStarred,
+  );
   return c.json({ ok: true });
-}
+});
 
 messageRoutes.post("/:id/move", async (c) => {
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
-    c.req.param("id"),
-  );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
   const body = await c.req.json().catch(() => null);
-  const folder = body?.folder;
-  if (!MOVE_TARGETS.includes(folder)) {
-    return c.json(
-      { error: `folder must be one of: ${MOVE_TARGETS.join(", ")}` },
-      400,
-    );
-  }
-
-  await db
-    .update(messages)
-    .set({ folder: folder as MoveTarget })
-    .where(eq(messages.id, message.id));
+  await moveMessage(sessionServiceContext(c), c.req.param("id"), body?.folder);
   return c.json({ ok: true });
 });
 
-// Apply a label to a message (idempotent). The label must belong to the same
-// mailbox as the message, so you can never tag a message with another mailbox's
-// label (multi-domain invariant). A label not in the message's mailbox — or one
-// the user can't see — is indistinguishable from "not found".
+// Apply a label to a message (idempotent); the label must be in the message's
+// mailbox (services/message-actions.ts).
 messageRoutes.put("/:id/labels/:labelId", async (c) => {
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
+  await addMessageLabel(
+    sessionServiceContext(c),
     c.req.param("id"),
+    c.req.param("labelId"),
   );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
-  const label = await db
-    .select({ id: labels.id })
-    .from(labels)
-    .where(
-      and(
-        eq(labels.id, c.req.param("labelId")),
-        eq(labels.mailboxId, message.mailboxId),
-      ),
-    )
-    .get();
-  if (!label) return c.json({ error: "Label not found" }, 404);
-
-  await db
-    .insert(messageLabels)
-    .values({ messageId: message.id, labelId: label.id })
-    .onConflictDoNothing();
   return c.json({ ok: true });
 });
 
 // Remove a label from a message. Idempotent: removing an absent label is a
 // no-op success, so the UI can call it without first checking.
 messageRoutes.delete("/:id/labels/:labelId", async (c) => {
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
+  await removeMessageLabel(
+    sessionServiceContext(c),
     c.req.param("id"),
+    c.req.param("labelId"),
   );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
-  await db
-    .delete(messageLabels)
-    .where(
-      and(
-        eq(messageLabels.messageId, message.id),
-        eq(messageLabels.labelId, c.req.param("labelId")),
-      ),
-    );
   return c.json({ ok: true });
 });
 
 // Mint a signed, expiring download URL for one attachment of a message the
-// user can read. The URL itself is then usable without a session.
+// user can read. The URL itself is then usable without a session. Relative for
+// the SPA (same origin).
 messageRoutes.get("/:id/attachments/:attachmentId/url", async (c) => {
-  const signingKey = requireSigningKey(c.env);
-  const db = drizzle(c.env.DB);
-  const message = await getAccessibleMessage(
-    db,
-    c.get("user").id,
+  const { url, expiresAt } = await attachmentUrl(
+    sessionServiceContext(c),
     c.req.param("id"),
+    c.req.param("attachmentId"),
   );
-  if (!message) return c.json({ error: "Message not found" }, 404);
-
-  const attachment = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(
-        eq(attachments.id, c.req.param("attachmentId")),
-        eq(attachments.messageId, message.id),
-      ),
-    )
-    .get();
-  if (!attachment) return c.json({ error: "Attachment not found" }, 404);
-
-  const expiresAt =
-    Math.floor(Date.now() / 1000) + ATTACHMENT_URL_TTL_SECONDS;
-  const sig = attachmentSignature(signingKey, attachment.id, expiresAt);
-  return c.json({
-    url: `/api/attachments/${attachment.id}?expires=${expiresAt}&sig=${sig}`,
-    expiresAt: new Date(expiresAt * 1000).toISOString(),
-  });
+  return c.json({ url, expiresAt });
 });

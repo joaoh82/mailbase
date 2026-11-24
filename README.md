@@ -51,7 +51,7 @@ adding one never redeploys:
 
 ## Features
 
-What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's next):
+What works today (Phases 0–5, 7 and 8 — see the [roadmap](docs/ROADMAP.md) for what's next):
 
 - **Receive on unlimited domains.** Cloudflare Email Routing → an Email Worker parses
   with `postal-mime`, stores the raw `.eml` in R2 (the source of truth) and parsed
@@ -88,6 +88,11 @@ What works today (Phases 0–5 — see the [roadmap](docs/ROADMAP.md) for what's
   live verification status. A domain switcher and a unified **"all inboxes"** view round
   it out. The only manual step is delegating nameservers at your registrar — which the UI
   spells out.
+- **Connect AI agents.** Create a personal **API token** in Settings and point an agent at
+  the remote **MCP** endpoint (`/api/mcp`) or the **REST API** (`/api/v1`): it can watch for
+  new mail, read, search and organize, write **drafts** you review in the webmail's Drafts
+  view, and send, reply and forward — within a per-token request limit and daily send cap,
+  and never with admin rights. See [docs/AGENT_API.md](docs/AGENT_API.md).
 
 ## How it works
 
@@ -114,7 +119,7 @@ packages/web/            # React SPA (Vite + Tailwind)
 packages/shared/         # types, Drizzle schema, MailSender interface
 migrations/              # D1 SQL migrations (numbered, append-only)
 marketing/               # Remotion source for the README demo video (standalone)
-docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
+docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, USER_GUIDE.md, AGENT_API.md, PROMPTS.md
 ```
 
 ## Documentation
@@ -125,6 +130,8 @@ docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, PROMPTS.md
   detailed development plan. The source of truth; read it before non-trivial changes.
 - **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** — the full, step-by-step guide to
   running your own mailbase on your own Cloudflare account.
+- **[docs/AGENT_API.md](docs/AGENT_API.md)** — connecting an AI agent: API tokens, the MCP
+  tools and the `/api/v1` REST endpoints.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — what's shipped, what's in progress, and what's
   under consideration.
 - **[docs/PROMPTS.md](docs/PROMPTS.md)** — the phase-by-phase prompts used to build the

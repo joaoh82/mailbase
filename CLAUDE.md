@@ -40,11 +40,11 @@ design, update `docs/DESIGN.md` in the same PR.
 
 ```
 packages/email-worker/   # inbound Email Routing handler
-packages/api/            # Hono REST API, auth, send
+packages/api/            # Hono REST API, auth, send, agent REST (/api/v1) + MCP (/api/mcp)
 packages/web/            # React SPA + the Worker that serves it
 packages/shared/         # Drizzle schema, MailSender interface, crypto/password, iCalendar
 migrations/              # D1 SQL migrations (numbered, append-only)
-docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, USER_GUIDE.md, PROMPTS.md
+docs/                    # DESIGN.md, SELF_HOSTING.md, ROADMAP.md, USER_GUIDE.md, AGENT_API.md, PROMPTS.md
 scripts/                 # bootstrap.mjs, doctor.mjs, create-user.ts, seed.sql
 ```
 
@@ -70,9 +70,19 @@ failure so the sender retries; only `setReject()` refuses permanently.
 **API** (`packages/api/src/index.ts`): route registration order *is* the security model.
 Routes mounted before `api.use("*", requireAuth, csrfProtection)` are deliberately public
 (login, signed attachment URLs whose HMAC is the authorization, Svix-signed provider
-webhooks, opening/accepting an invite); everything after requires a session cookie plus an
-`X-CSRF-Token` header on mutations, and `/admin/*` adds `requireAdmin`. When adding a
+webhooks, opening/accepting an invite); then the **agent** sub-apps `/v1` (REST) and `/mcp`
+(MCP), which take only `Authorization: Bearer mb_…` (`requireApiToken` in
+`lib/api-token.ts`, cookies ignored, so no CSRF) and end in their own catch-all 404;
+everything after requires a session cookie plus an `X-CSRF-Token` header on mutations, and
+`/admin/*` adds `requireAdmin`. A token can therefore never reach session routes, admin,
+mailbox management or token management (`/tokens` is a session route). When adding a
 route, put it on the correct side of that line.
+
+**Services** (`packages/api/src/services/`): mail reading, organizing, sending
+(`sendMessage`), drafts, compose (server-side reply/forward) and calendar logic are plain
+functions over `{ db, env, userId }`. Session routes, `/api/v1` (`src/agent/rest.ts`) and the
+MCP tool registry (`src/agent/tools.ts`) all call them — add behaviour there, not in a
+handler, so the three surfaces can't drift.
 
 **Authorization** is mailbox membership, always. `packages/api/src/lib/access.ts`
 (`hasMailboxAccess`, `getAccessibleMessage`, `getAccessibleThread`, …) joins through
@@ -141,7 +151,7 @@ endpoint (keep its types in step with the API's serializers in
 ## Working agreement
 
 - Work ONE phase (from `docs/DESIGN.md` §9) at a time. Do not start the next phase, or
-  "helpfully" implement parts of it, without being asked. Phases 0–5 and 7 have shipped;
+  "helpfully" implement parts of it, without being asked. Phases 0–5, 7 and 8 have shipped;
   Phase 6 (migrate & harden) is the current one — see `docs/ROADMAP.md` for live status.
 - Every phase ends with: typecheck clean, tests passing, and the phase's milestone
   demonstrably met. Say explicitly how you verified it.

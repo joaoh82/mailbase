@@ -27,68 +27,19 @@ import {
   grantMailboxMembership,
 } from "../lib/membership";
 import { messageListItem } from "../lib/serialize";
-
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 100;
+import { sessionServiceContext } from "../lib/service-context";
+import {
+  listMailboxes,
+  listMessages,
+  pageSize,
+  searchMessages,
+} from "../services/mail-query";
 
 export const mailboxRoutes = new Hono<AppEnv>();
 
 // All mailboxes the user is a member of, with inbox unread counts.
 mailboxRoutes.get("/", async (c) => {
-  const db = drizzle(c.env.DB);
-  const user = c.get("user");
-
-  const rows = await db
-    .select({
-      id: mailboxes.id,
-      name: mailboxes.name,
-      displayName: mailboxes.displayName,
-      domain: domains.name,
-      role: mailboxMembers.role,
-      signature: mailboxes.signature,
-    })
-    .from(mailboxMembers)
-    .innerJoin(mailboxes, eq(mailboxes.id, mailboxMembers.mailboxId))
-    .innerJoin(domains, eq(domains.id, mailboxes.domainId))
-    .where(eq(mailboxMembers.userId, user.id))
-    .orderBy(domains.name, mailboxes.name)
-    .all();
-
-  const unreadByMailbox = new Map<string, number>();
-  if (rows.length > 0) {
-    const counts = await db
-      .select({
-        mailboxId: messages.mailboxId,
-        unread: sql<number>`count(*)`,
-      })
-      .from(messages)
-      .where(
-        and(
-          inArray(
-            messages.mailboxId,
-            rows.map((r) => r.id),
-          ),
-          eq(messages.folder, "inbox"),
-          eq(messages.isRead, false),
-        ),
-      )
-      .groupBy(messages.mailboxId)
-      .all();
-    for (const row of counts) unreadByMailbox.set(row.mailboxId, row.unread);
-  }
-
-  return c.json({
-    mailboxes: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      domain: r.domain,
-      address: `${r.name}@${r.domain}`,
-      role: r.role,
-      unread: unreadByMailbox.get(r.id) ?? 0,
-      displayName: r.displayName,
-      signature: r.signature,
-    })),
-  });
+  return c.json({ mailboxes: await listMailboxes(sessionServiceContext(c)) });
 });
 
 // Cheap "anything changed?" probe for the live-update poll (MAIL-14). Returns
@@ -208,10 +159,7 @@ mailboxRoutes.get("/all/messages", async (c) => {
   }
   const folder = folderParam as MessageFolder;
 
-  const limit = Math.min(
-    Math.max(Number(c.req.query("limit")) || DEFAULT_PAGE_SIZE, 1),
-    MAX_PAGE_SIZE,
-  );
+  const limit = pageSize(c.req.query("limit"));
 
   // Scope to the user's mailbox memberships via an inner join — nothing outside
   // them is reachable (multi-domain invariant).
@@ -282,156 +230,26 @@ mailboxRoutes.get("/all/messages", async (c) => {
 // Paginated message list for one folder, newest first. Keyset cursor
 // "<epochSeconds>.<id>" so pages stay stable while new mail arrives.
 mailboxRoutes.get("/:mailboxId/messages", async (c) => {
-  const db = drizzle(c.env.DB);
-  const user = c.get("user");
-  const mailboxId = c.req.param("mailboxId");
-  if (!(await hasMailboxAccess(db, user.id, mailboxId))) {
-    return c.json({ error: "Mailbox not found" }, 404);
-  }
-
-  const folderParam = c.req.query("folder") ?? "inbox";
-  if (!(MESSAGE_FOLDERS as readonly string[]).includes(folderParam)) {
-    return c.json({ error: `Unknown folder: ${folderParam}` }, 400);
-  }
-  const folder = folderParam as MessageFolder;
-
-  const limit = Math.min(
-    Math.max(Number(c.req.query("limit")) || DEFAULT_PAGE_SIZE, 1),
-    MAX_PAGE_SIZE,
+  return c.json(
+    await listMessages(sessionServiceContext(c), {
+      mailboxId: c.req.param("mailboxId"),
+      folder: c.req.query("folder"),
+      labelId: c.req.query("labelId"),
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    }),
   );
-
-  // Optional label filter (MAIL-16): narrow the folder to messages carrying a
-  // given label. The label must belong to this mailbox, so the filter can never
-  // reference another mailbox's label (multi-domain invariant).
-  const labelId = c.req.query("labelId");
-  if (labelId) {
-    const label = await db
-      .select({ id: labels.id })
-      .from(labels)
-      .where(and(eq(labels.id, labelId), eq(labels.mailboxId, mailboxId)))
-      .get();
-    if (!label) return c.json({ error: "Label not found" }, 404);
-  }
-
-  const conditions = [
-    eq(messages.mailboxId, mailboxId),
-    eq(messages.folder, folder),
-  ];
-  const cursorParam = c.req.query("cursor");
-  if (cursorParam) {
-    const dot = cursorParam.indexOf(".");
-    const cursorDate = Number(cursorParam.slice(0, dot));
-    const cursorId = cursorParam.slice(dot + 1);
-    if (dot < 1 || !Number.isFinite(cursorDate) || !cursorId) {
-      return c.json({ error: "Malformed cursor" }, 400);
-    }
-    const boundary = new Date(cursorDate * 1000);
-    conditions.push(
-      or(
-        lt(messages.date, boundary),
-        and(eq(messages.date, boundary), lt(messages.id, cursorId)),
-      )!,
-    );
-  }
-
-  // With a label filter, inner-join the join table so only tagged messages come
-  // back; the select shape is normalized to `{ message }` either way so the
-  // serialization below is uniform.
-  const page = labelId
-    ? await db
-        .select({ message: messages })
-        .from(messages)
-        .innerJoin(
-          messageLabels,
-          and(
-            eq(messageLabels.messageId, messages.id),
-            eq(messageLabels.labelId, labelId),
-          ),
-        )
-        .where(and(...conditions))
-        .orderBy(desc(messages.date), desc(messages.id))
-        .limit(limit + 1)
-        .all()
-    : (
-        await db
-          .select()
-          .from(messages)
-          .where(and(...conditions))
-          .orderBy(desc(messages.date), desc(messages.id))
-          .limit(limit + 1)
-          .all()
-      ).map((message) => ({ message }));
-
-  const items = page.slice(0, limit);
-  const last = items[items.length - 1]?.message;
-  const nextCursor =
-    page.length > limit && last
-      ? `${Math.floor(last.date.getTime() / 1000)}.${last.id}`
-      : null;
-
-  const labelsByMsg = await labelsByMessage(
-    db,
-    items.map((row) => row.message.id),
-  );
-  return c.json({
-    messages: items.map((row) =>
-      messageListItem(row.message, labelsByMsg.get(row.message.id) ?? []),
-    ),
-    nextCursor,
-  });
 });
 
-// FTS5 search across the mailbox (all folders). The query is tokenized and
-// quoted so user input can never hit FTS5 syntax errors; the last token
-// matches by prefix for as-you-type friendliness.
+// FTS5 search across the mailbox (all folders); see services/mail-query.ts.
 mailboxRoutes.get("/:mailboxId/search", async (c) => {
-  const db = drizzle(c.env.DB);
-  const user = c.get("user");
-  const mailboxId = c.req.param("mailboxId");
-  if (!(await hasMailboxAccess(db, user.id, mailboxId))) {
-    return c.json({ error: "Mailbox not found" }, 404);
-  }
-
-  const q = (c.req.query("q") ?? "").trim();
-  if (!q) return c.json({ error: "q is required" }, 400);
-  const ftsQuery = q
-    .split(/\s+/)
-    .map((token, i, all) => {
-      const quoted = `"${token.replaceAll('"', '""')}"`;
-      return i === all.length - 1 ? `${quoted}*` : quoted;
-    })
-    .join(" ");
-
-  const limit = Math.min(
-    Math.max(Number(c.req.query("limit")) || DEFAULT_PAGE_SIZE, 1),
-    MAX_PAGE_SIZE,
+  return c.json(
+    await searchMessages(sessionServiceContext(c), {
+      mailboxId: c.req.param("mailboxId"),
+      q: c.req.query("q") ?? "",
+      limit: c.req.query("limit"),
+    }),
   );
-
-  const matched = await c.env.DB.prepare(
-    `SELECT m.id FROM messages_fts f
-     JOIN messages m ON m.rowid = f.rowid
-     WHERE messages_fts MATCH ?1 AND m.mailbox_id = ?2
-     ORDER BY rank LIMIT ?3`,
-  )
-    .bind(ftsQuery, mailboxId, limit)
-    .all<{ id: string }>();
-
-  const ids = matched.results.map((r) => r.id);
-  if (ids.length === 0) return c.json({ messages: [] });
-
-  const rows = await db
-    .select()
-    .from(messages)
-    .where(inArray(messages.id, ids))
-    .all();
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const labelsByMsg = await labelsByMessage(db, ids);
-  return c.json({
-    messages: ids
-      .map((id) => byId.get(id))
-      .filter((r) => r !== undefined)
-      .map((r) => messageListItem(r, labelsByMsg.get(r.id) ?? [])),
-  });
 });
 
 const MEMBER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

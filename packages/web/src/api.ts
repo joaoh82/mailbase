@@ -89,6 +89,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Machine-readable reason when the API gives one (e.g. "draft_conflict"). */
+    public code?: string,
   ) {
     super(message);
   }
@@ -107,8 +109,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
       error?: string;
+      code?: string;
     } | null;
-    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`, body?.code);
   }
   return (await res.json()) as T;
 }
@@ -475,6 +478,128 @@ export function sendMail(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// --- Drafts (Phase 8) -------------------------------------------------------
+// Server-side, author-private drafts; agents (via API tokens) write to the same
+// store, so their drafts appear here. Mirrors serializeDraft in the API.
+
+export type DraftMode = "new" | "reply" | "reply_all" | "forward";
+
+export interface Draft {
+  id: string;
+  mailboxId: string;
+  identityId: string | null;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  text: string;
+  mode: DraftMode;
+  sourceMessageId: string | null;
+  /** Optimistic-concurrency version; send it back on every update. */
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  attachments: AttachmentMeta[];
+}
+
+export interface DraftFields {
+  identityId?: string | null;
+  to?: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject?: string;
+  html?: string;
+  text?: string;
+  /** Staged uploads to move into the draft. */
+  uploadIds?: string[];
+}
+
+export function listDrafts(mailboxId?: string): Promise<{ drafts: Draft[] }> {
+  const q = mailboxId ? `?mailboxId=${encodeURIComponent(mailboxId)}` : "";
+  return request(`/api/drafts${q}`);
+}
+
+export function createDraft(
+  fields: DraftFields & {
+    mailboxId?: string;
+    mode?: DraftMode;
+    sourceMessageId?: string;
+  },
+): Promise<{ draft: Draft }> {
+  return request("/api/drafts", { method: "POST", body: JSON.stringify(fields) });
+}
+
+export function updateDraft(
+  id: string,
+  version: number,
+  fields: DraftFields & { removeAttachmentIds?: string[] },
+): Promise<{ draft: Draft }> {
+  return request(`/api/drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...fields, version }),
+  });
+}
+
+export function deleteDraft(id: string): Promise<unknown> {
+  return request(`/api/drafts/${id}`, { method: "DELETE" });
+}
+
+export function sendDraft(
+  id: string,
+  version: number,
+): Promise<{ message: MessageDetail; providerMessageId: string }> {
+  return request(`/api/drafts/${id}/send`, {
+    method: "POST",
+    body: JSON.stringify({ version }),
+  });
+}
+
+// --- Personal API tokens (Phase 8) -----------------------------------------
+// For connecting agents (MCP / REST). Mirrors serializeApiToken in the API; the
+// token value itself is only ever returned by createApiToken.
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  /** First characters of the token, for telling tokens apart. */
+  prefix: string;
+  rateLimitPerMinute: number;
+  dailySendCap: number;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  status: "active" | "expired" | "revoked";
+}
+
+export function listApiTokens(): Promise<{ tokens: ApiToken[] }> {
+  return request("/api/tokens");
+}
+
+export function createApiToken(input: {
+  name: string;
+  expiresInDays?: number;
+  rateLimitPerMinute?: number;
+  dailySendCap?: number;
+}): Promise<{ token: string; apiToken: ApiToken }> {
+  return request("/api/tokens", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateApiToken(
+  id: string,
+  input: { name?: string; rateLimitPerMinute?: number; dailySendCap?: number },
+): Promise<{ apiToken: ApiToken }> {
+  return request(`/api/tokens/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function revokeApiToken(id: string): Promise<{ apiToken: ApiToken }> {
+  return request(`/api/tokens/${id}`, { method: "DELETE" });
 }
 
 export interface UploadResult {

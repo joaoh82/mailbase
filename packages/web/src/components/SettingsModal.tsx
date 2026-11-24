@@ -6,6 +6,7 @@ import {
   POLL_INTERVAL_OPTIONS,
   writePollIntervalMs,
 } from "../lib/preferences";
+import { ApiTokensSection } from "./ApiTokensSection";
 import { RichTextEditor } from "./RichTextEditor";
 import { Button } from "./ui/button";
 
@@ -13,7 +14,8 @@ import { Button } from "./ui/button";
 // reading-pane email background (MAIL-15, per-browser), and the signature on
 // each of your send-as identities (MAIL-4). A signature is appended to the
 // bottom of outgoing mail sent from that address; leave it empty to fall back
-// to the mailbox's default signature.
+// to the mailbox's default signature. Also personal API tokens for connecting
+// agents (Phase 8).
 export function SettingsModal({
   identities,
   pollIntervalMs,
@@ -70,7 +72,7 @@ export function SettingsModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg space-y-5 rounded-xl border border-slate-800 bg-slate-900 p-6"
+        className="max-h-[90vh] w-full max-w-lg space-y-5 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-2">
@@ -132,6 +134,10 @@ export function SettingsModal({
             </select>
           </label>
         </div>
+
+        <div className="border-t border-slate-800" />
+
+        <ApiTokensSection />
 
         <div className="border-t border-slate-800" />
 

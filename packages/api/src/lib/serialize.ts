@@ -1,9 +1,13 @@
 import type {
+  apiTokens,
   attachments,
+  draftAttachments,
+  drafts,
   eventAttendees,
   events,
   messages,
 } from "@mailbase/shared";
+import { tokenStatus } from "./api-token";
 import type { SerializedLabel } from "./labels";
 
 // Wire shapes for the SPA. Dates go out as ISO strings; body_text only on
@@ -82,6 +86,51 @@ export function calendarEvent(
       partstat: a.partstat,
       role: a.role,
       isSelf: a.isSelf,
+    })),
+  };
+}
+
+// Personal API token (Phase 8). Never includes the token or its hash.
+export function serializeApiToken(t: typeof apiTokens.$inferSelect) {
+  return {
+    id: t.id,
+    name: t.name,
+    prefix: t.tokenPrefix,
+    rateLimitPerMinute: t.rateLimitPerMinute,
+    dailySendCap: t.dailySendCap,
+    createdAt: t.createdAt.toISOString(),
+    lastUsedAt: t.lastUsedAt ? t.lastUsedAt.toISOString() : null,
+    expiresAt: t.expiresAt ? t.expiresAt.toISOString() : null,
+    revokedAt: t.revokedAt ? t.revokedAt.toISOString() : null,
+    status: tokenStatus(t),
+  };
+}
+
+// Server-side draft (Phase 8). Author-private, so no author field is needed.
+export function serializeDraft(
+  d: typeof drafts.$inferSelect,
+  attachmentRows: (typeof draftAttachments.$inferSelect)[] = [],
+) {
+  return {
+    id: d.id,
+    mailboxId: d.mailboxId,
+    identityId: d.identityId,
+    to: d.toAddrs,
+    cc: d.ccAddrs,
+    bcc: d.bccAddrs,
+    subject: d.subject,
+    html: d.bodyHtml,
+    text: d.bodyText,
+    mode: d.mode,
+    sourceMessageId: d.sourceMessageId,
+    version: d.version,
+    createdAt: d.createdAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
+    attachments: attachmentRows.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.contentType,
+      size: a.size,
     })),
   };
 }

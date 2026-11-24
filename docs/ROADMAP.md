@@ -79,6 +79,23 @@ Layered onto the existing pipeline; no new Cloudflare products. Shipped as **MAI
 Accept/Maybe/Decline sends a `REPLY`; a mailbase-created invite goes out as a `REQUEST`. See
 [DESIGN.md §9 — Phase 7](DESIGN.md#9-development-plan).
 
+### ✅ Phase 8 — Agent access (API tokens, REST, MCP, drafts)
+Connect an AI agent to your mail. **Personal API tokens** (Settings → API tokens; shown once,
+stored hashed, revocable, optional expiry, a per-token request limit and daily send cap) unlock
+two bearer-only front doors on the existing API Worker: a **REST API** at `/api/v1` and a
+**remote MCP endpoint** at `/api/mcp` (stateless Streamable HTTP, official MCP SDK). Agents can
+list mailboxes, read and search mail, poll for new mail (`check_new_mail`), organize
+(read/star/archive/trash/labels), write **server-side drafts** that appear in a new **Drafts**
+view in the webmail, send, reply, forward and RSVP. Tokens never reach admin, mailbox
+management or token management. Both surfaces share one service layer with the webmail, so
+threading, the Sent copy and bounce tracking are identical. See
+[AGENT_API.md](AGENT_API.md).
+
+> **Live milestone awaits verification:** an external agent (grokbot) monitoring a few
+> mailboxes, drafting a reply that is edited and sent from the webmail, and sending mail that
+> is delivered and threaded. Whether grokbot's MCP client supports remote Streamable HTTP with
+> a custom `Authorization` header is unverified; the REST API is the fallback.
+
 ## In progress
 
 ### 🚧 Phase 6 — Migrate & harden
